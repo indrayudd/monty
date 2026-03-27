@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 notes_streamer/.ghost-build.json
+.env
