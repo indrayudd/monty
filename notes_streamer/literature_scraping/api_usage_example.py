@@ -49,11 +49,14 @@ class OpenAlexClient:
         if user_agent:
             self.headers["User-Agent"] = user_agent
 
-    def _get(self, url: str, params: Optional[Dict[str, Any]] = None, stream: bool = False) -> Any:
+    def build_url(self, url: str, params: Optional[Dict[str, Any]] = None) -> str:
         params = dict(params or {})
         params["api_key"] = self.api_key
         query = urlencode(params)
-        full_url = f"{url}?{query}" if query else url
+        return f"{url}?{query}" if query else url
+
+    def _get(self, url: str, params: Optional[Dict[str, Any]] = None, stream: bool = False) -> Any:
+        full_url = self.build_url(url, params=params)
         req = Request(full_url, headers=self.headers)
         if stream:
             resp = urlopen(req, timeout=self.timeout)

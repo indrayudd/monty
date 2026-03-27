@@ -7,26 +7,11 @@ import re
 
 
 CHILDREN = [
-    "Aavya Chaudhary",
-    "Reya Kori Desai",
-    "Navisha Yadav",
-    "Trishika",
-    "Shaurya Savaj",
-    "Aarav Mehta",
-    "Ira Patel",
-    "Kabir Sinha",
-    "Mira Shah",
-    "Vihaan Joshi",
-    "Anaya Rao",
-    "Rian Kapoor",
-    "Saanvi Verma",
     "Arjun Nair",
-    "Inaaya Khan",
-    "Atharv Iyer",
     "Diya Malhotra",
-    "Dev Patel",
-    "Nina Bose",
     "Kiaan Gupta",
+    "Mira Shah",
+    "Saanvi Verma",
 ]
 
 EDUCATORS = [
@@ -98,6 +83,50 @@ PROBLEM_OUTCOME = [
     "The child ended the observation in a more settled state, but only after sustained support and several clear reminders.",
 ]
 
+VIOLENT_CASES = [
+    (
+        "emergency_killing_threat",
+        "yelled that they were going to kill a classmate and then lunged toward the child with a metal water bottle held up like a weapon",
+    ),
+    (
+        "emergency_stabbing_language",
+        "shouted that they would stab a peer and jabbed a sharpened pencil toward the other child's work rug",
+    ),
+    (
+        "emergency_shooting_threat",
+        "said they wanted to shoot everyone in the room and used wooden blocks to mimic a shooting motion toward nearby children",
+    ),
+    (
+        "emergency_self_harm",
+        "cried that they wanted to hurt themselves and then tried to slam their head into the shelf while adults blocked the movement",
+    ),
+    (
+        "emergency_weapon_grab",
+        "screamed that they would kill the teacher, grabbed classroom scissors, and ran toward the doorway before being stopped",
+    ),
+]
+
+VIOLENT_DETAIL_1 = [
+    "The assistant teacher immediately cleared nearby children, secured the object, and called for a second adult because the behavior had crossed from dysregulation into an active safety threat.",
+    "Two adults moved in at once to create distance, protect peers, and prevent the child from using the object while the rest of the room was redirected away from the area.",
+    "The child continued using explicit violent language after the first limit was set, so the response shifted from routine regulation support to emergency containment and direct supervision.",
+    "The educators did not attempt a full lesson reset in the moment; they focused entirely on immediate safety, blocking access to objects and maintaining line-of-sight coverage.",
+]
+
+VIOLENT_DETAIL_2 = [
+    "Even after the object was removed, the child repeated the threat several times and tried to push past the adult to reach the peer again.",
+    "The behavior remained acute for several minutes, with the child cycling between screaming, threatening statements, and rapid attempts to close distance with peers.",
+    "When redirected away from others, the child switched to self-harm language and tried to hit their own body hard enough that an adult had to intervene physically.",
+    "Peers were visibly frightened, and the classroom routine stopped completely while the adults held the boundary and began emergency communication steps.",
+]
+
+VIOLENT_OUTCOME = [
+    "The episode only stabilized after sustained co-regulation, physical blocking of unsafe movement, and removal from the main classroom area.",
+    "By the end of the observation the child was calmer, but the risk level remained high enough that the note should trigger immediate administrative and family follow-up.",
+    "The note documents an emergency event rather than a routine behavior concern; it should be treated as a same-day escalation with a safety response plan.",
+    "Although the child eventually quieted, the observation still represents a critical threat to peer safety and requires urgent review before normal classroom participation resumes.",
+]
+
 
 def slugify(text: str) -> str:
     text = text.lower()
@@ -109,12 +138,11 @@ def wrap_paragraph(sentence_parts: list[str]) -> str:
     return " ".join(sentence_parts)
 
 
-def build_note(index: int, rng: random.Random) -> tuple[str, str]:
-    neutral = index < 50
+def build_note(index: int, rng: random.Random, category: str) -> tuple[str, str]:
     child = CHILDREN[index % len(CHILDREN)]
     educator = EDUCATORS[index % len(EDUCATORS)]
 
-    if neutral:
+    if category == "neutral":
         scene = rng.choice(NEUTRAL_SCENES)
         title_bits = [
             "quiet work",
@@ -139,7 +167,7 @@ def build_note(index: int, rng: random.Random) -> tuple[str, str]:
         )
         body = "\n\n".join([para1, para2, para3])
         behavior = "Neutral"
-    else:
+    elif category == "problematic":
         scene = rng.choice(PROBLEM_SCENES)
         title_bits = [
             "transition difficulty",
@@ -164,6 +192,26 @@ def build_note(index: int, rng: random.Random) -> tuple[str, str]:
         )
         body = "\n\n".join([para1, para2, para3])
         behavior = "Problematic"
+    else:
+        title, scene = rng.choice(VIOLENT_CASES)
+        para1 = (
+            f"{child} {scene} during the work cycle, causing the nearby children to stop working and look for adult protection. "
+            f"{educator} treated the moment as an emergency because the child was using explicit violence language and moving in a way that could have harmed someone immediately."
+        )
+        para2 = wrap_paragraph(
+            [
+                rng.choice(VIOLENT_DETAIL_1),
+                rng.choice(VIOLENT_DETAIL_2),
+            ]
+        )
+        para3 = wrap_paragraph(
+            [
+                rng.choice(VIOLENT_OUTCOME),
+                "This observation should not be handled as a standard redirection note; it should trigger an agent response, a documented safety intervention, and targeted research on violent dysregulation and emergency de-escalation in early childhood settings.",
+            ]
+        )
+        body = "\n\n".join([para1, para2, para3])
+        behavior = "Problematic"
 
     filename = f"{behavior.lower()}_{index + 1:03d}_{slugify(title)}.txt"
     content = f"Name: {child}\n\n{body}\n"
@@ -173,18 +221,33 @@ def build_note(index: int, rng: random.Random) -> tuple[str, str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate verbose Montessori observation notes.")
     parser.add_argument("--output-dir", type=Path, default=Path("notes_streamer/notes"))
-    parser.add_argument("--count", type=int, default=100)
+    parser.add_argument("--count", type=int, default=120)
+    parser.add_argument("--neutral-count", type=int, default=50)
+    parser.add_argument("--problematic-count", type=int, default=50)
+    parser.add_argument("--violent-count", type=int, default=20)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    expected_total = args.neutral_count + args.problematic_count + args.violent_count
+    if args.count != expected_total:
+        raise SystemExit(
+            f"--count ({args.count}) must equal neutral + problematic + violent ({expected_total})."
+        )
+
+    categories = (
+        ["neutral"] * args.neutral_count
+        + ["problematic"] * args.problematic_count
+        + ["violent"] * args.violent_count
+    )
+
     for existing in args.output_dir.glob("*.txt"):
         existing.unlink()
 
-    for index in range(args.count):
-        filename, content = build_note(index, rng)
+    for index, category in enumerate(categories):
+        filename, content = build_note(index, rng, category)
         (args.output_dir / filename).write_text(content, encoding="utf-8")
 
     return 0

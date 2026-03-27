@@ -1,0 +1,8 @@
+﻿1. Every [10, 50]s streamer adds data to ghost database.
+2. Every 30s, it updates its student profiles according to the notes collected. 
+3. It goes through the student profile db and compares it to its knowledge graph/db
+4. If it cannot find anything useful, it queries openalex and updates its knowledge
+5. After knowledge has been updated, it populates alerts for the dashboard.
+
+
+6. [Emergency Case]: If something particularly dangerous is written (killing/stabbing, hurting themselves, shooting), the agent automatically takes cognizance, adds to profile knowledge, looks into its own knowledge graph for solutions, searches with OpenAlex for behavioral papers and adds solutions to the console for the profile then and there.

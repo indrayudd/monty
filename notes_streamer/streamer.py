@@ -52,11 +52,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Ghost Build database id to reuse if it exists; creates a new database if it does not.",
     )
-    parser.add_argument("--interval-seconds", type=float, default=30.0)
+    parser.add_argument(
+        "--interval-seconds",
+        type=float,
+        default=1.0,
+        help="Fixed interval between streamed notes. Defaults to 1 second for demo responsiveness.",
+    )
+    parser.add_argument("--interval-min-seconds", type=float, default=1.0)
+    parser.add_argument("--interval-max-seconds", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=0, help="Number of notes to stream; 0 means run forever.")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--single-shot", action="store_true", help="Stream exactly one note and exit.")
     return parser
+
+
+def _next_sleep_seconds(args: argparse.Namespace, rng: random.Random) -> float:
+    if args.interval_seconds is not None:
+        return max(args.interval_seconds, 0.0)
+
+    low = max(args.interval_min_seconds, 0.0)
+    high = max(args.interval_max_seconds, 0.0)
+    if high < low:
+        raise ValueError("--interval-max-seconds must be >= --interval-min-seconds")
+    return rng.uniform(low, high)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,19 +86,35 @@ def main(argv: list[str] | None = None) -> int:
 
     limit = 1 if args.single_shot else args.limit
     streamed = 0
+    note_queue: list[Path] = []
 
     try:
+        print(
+            f"[streamer] starting notes stream from {args.notes_dir} "
+            f"with interval={_next_sleep_seconds(args, rng):.1f}s",
+            flush=True,
+        )
         ghost_db.initialize()
         while True:
-            stream_once(args.notes_dir, ghost_db, rng)
+            if not note_queue:
+                note_queue = collect_note_paths(args.notes_dir)
+                if not note_queue:
+                    raise FileNotFoundError(f"No note files found in {args.notes_dir}")
+                rng.shuffle(note_queue)
+
+            source_path = note_queue.pop()
+            parsed = parse_note_file(source_path)
+            inserted = ghost_db.insert_note(parsed)
+            status = "inserted" if inserted else "skipped"
+            print(f"[{status}] {parsed.name}", flush=True)
             streamed += 1
             if limit and streamed >= limit:
                 break
             if not args.single_shot:
-                time.sleep(max(args.interval_seconds, 0.0))
+                time.sleep(_next_sleep_seconds(args, rng))
     except (KeyboardInterrupt, BrokenPipeError):
         return 130
-    except (FileNotFoundError, NoteParseError, GhostBuildError) as exc:
+    except (FileNotFoundError, NoteParseError, GhostBuildError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
