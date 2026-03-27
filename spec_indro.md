@@ -27,7 +27,7 @@ Generates student data with behavioral/wellbeing flags and writes to Ghost DB.
 **Writes to these Ghost DB collections (schemas in `spec_integration.md`):**
 - `students` — student profiles
 - `flags` — behavioral/wellbeing flags with severity levels
-- `notes` — contextual notes about students
+- `notes` — teacher notes (id, name, body)
 
 **Flag types to generate:**
 | Type | Examples |

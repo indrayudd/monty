@@ -37,10 +37,8 @@ Indro writes to these collections. Thilak reads from them via Ghost SDK.
 ```json
 {
   "id": "string (uuid)",
-  "student_id": "string (references students.id)",
-  "content": "string",
-  "author": "string (agent name or 'educator')",
-  "created_at": "ISO8601"
+  "name": "string (student name)",
+  "body": "string (teacher's note content)"
 }
 ```
 

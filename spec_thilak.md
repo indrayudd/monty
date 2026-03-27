@@ -95,7 +95,7 @@ Single-page dashboard with a student selector and 3 panels:
 Create mock fixtures in `intelligence/api/mocks/` matching the schemas from `spec_integration.md`:
 - `mock_students.json`
 - `mock_flags.json`
-- `mock_notes.json`
+- `mock_notes.json` (id, name, body)
 - `mock_knowledge_graph.json`
 
 The Ghost Client service should:
