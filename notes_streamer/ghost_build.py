@@ -21,9 +21,10 @@ class GhostBuildState:
 
 
 class GhostBuildDatabase:
-    def __init__(self, database_name: str, state_path: Path) -> None:
+    def __init__(self, database_name: str, state_path: Path, database_id: str | None = None) -> None:
         self.database_name = database_name
         self.state_path = state_path
+        self.database_id = database_id
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state: GhostBuildState | None = None
 
@@ -41,6 +42,18 @@ class GhostBuildDatabase:
         )
 
     def insert_note(self, note: ParsedNote) -> bool:
+        exists = self._run_sql(
+            f"""
+            SELECT 1
+            FROM ingested_observations
+            WHERE name = {self._sql_literal(note.name)}
+              AND body = {self._sql_literal(note.body)}
+            LIMIT 1;
+            """
+        )
+        if exists.stdout.strip():
+            return False
+
         result = self._run_sql(
             f"""
             INSERT INTO ingested_observations (name, body)
@@ -55,19 +68,23 @@ class GhostBuildDatabase:
         if self._state is not None:
             return self._state
 
-        env_database_id = os.environ.get("GHOST_BUILD_DATABASE_ID", "").strip()
-        if env_database_id:
-            state = GhostBuildState(database_id=env_database_id, database_name=self.database_name)
+        self._ghost_executable()
+
+        desired_id = self.database_id or os.environ.get("GHOST_BUILD_DATABASE_ID", "").strip()
+        if not desired_id and self.state_path.exists():
+            try:
+                payload = json.loads(self.state_path.read_text(encoding="utf-8"))
+                desired_id = str(payload.get("database_id", "")).strip()
+            except Exception as exc:  # pragma: no cover - defensive parse guard
+                raise GhostBuildError(f"Failed to read Ghost Build state file: {self.state_path}") from exc
+
+        if desired_id and self._database_exists(desired_id):
+            state = GhostBuildState(database_id=desired_id, database_name=self.database_name)
+            self._persist_state(state)
             self._state = state
             return state
 
-        if not shutil.which("ghost"):
-            raise GhostBuildError(
-                "Ghost Build CLI is not installed. Install it with `curl -fsSL https://install.ghost.build | sh` "
-                "and run `ghost login` first."
-            )
-
-        if self.state_path.exists():
+        if not desired_id and self.state_path.exists():
             try:
                 payload = json.loads(self.state_path.read_text(encoding="utf-8"))
                 state = GhostBuildState(
@@ -88,6 +105,58 @@ class GhostBuildDatabase:
         )
         database_id = self._extract_database_id(created.stdout)
         state = GhostBuildState(database_id=database_id, database_name=self.database_name)
+        self._persist_state(state)
+        self._state = state
+        return state
+
+    def _run_sql(self, sql: str) -> subprocess.CompletedProcess[str]:
+        state = self._resolve_state()
+        return self._run_ghost("sql", state.database_id, input_text=sql)
+
+    def _run_ghost(self, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+        ghost_executable = self._ghost_executable()
+        completed = subprocess.run(
+            [ghost_executable, *args],
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise GhostBuildError(
+                "Ghost Build CLI command failed: "
+                f"{ghost_executable} {' '.join(args)}\n{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        return completed
+
+    @staticmethod
+    def _ghost_executable() -> str:
+        candidates = [
+            shutil.which("ghost"),
+            str(Path.home() / ".local" / "bin" / "ghost"),
+        ]
+        for candidate in candidates:
+            if candidate and Path(candidate).exists():
+                return candidate
+        raise GhostBuildError(
+            "Ghost Build CLI is not installed or not discoverable. "
+            "Install it with `curl -fsSL https://install.ghost.build | sh` and run `ghost login` first."
+        )
+
+    def _database_exists(self, database_id: str) -> bool:
+        completed = self._run_ghost("list", "--json")
+        try:
+            payload = json.loads(completed.stdout or "[]")
+        except json.JSONDecodeError as exc:
+            raise GhostBuildError("Ghost Build list command did not return JSON.") from exc
+
+        if isinstance(payload, list):
+            for entry in payload:
+                if isinstance(entry, dict) and str(entry.get("id", "")).strip() == database_id:
+                    return True
+        return False
+
+    def _persist_state(self, state: GhostBuildState) -> None:
         self.state_path.write_text(
             json.dumps(
                 {
@@ -99,27 +168,6 @@ class GhostBuildDatabase:
             + "\n",
             encoding="utf-8",
         )
-        self._state = state
-        return state
-
-    def _run_sql(self, sql: str) -> subprocess.CompletedProcess[str]:
-        state = self._resolve_state()
-        return self._run_ghost("sql", state.database_id, input_text=sql)
-
-    def _run_ghost(self, *args: str, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-        completed = subprocess.run(
-            ["ghost", *args],
-            input=input_text,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise GhostBuildError(
-                "Ghost Build CLI command failed: "
-                f"ghost {' '.join(args)}\n{completed.stderr.strip() or completed.stdout.strip()}"
-            )
-        return completed
 
     @staticmethod
     def _extract_database_id(stdout: str) -> str:

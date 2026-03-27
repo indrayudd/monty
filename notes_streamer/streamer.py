@@ -6,8 +6,13 @@ import random
 import sys
 import time
 
-from .ghost_build import GhostBuildDatabase, GhostBuildError
-from .note_parser import NoteParseError, parse_note_file
+if __package__ in (None, ""):
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from notes_streamer.ghost_build import GhostBuildDatabase, GhostBuildError
+    from notes_streamer.note_parser import NoteParseError, parse_note_file
+else:
+    from .ghost_build import GhostBuildDatabase, GhostBuildError
+    from .note_parser import NoteParseError, parse_note_file
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -40,6 +45,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes-dir", type=Path, default=DEFAULT_NOTES_DIR)
     parser.add_argument("--ghost-state-path", type=Path, default=DEFAULT_GHOST_STATE_PATH)
     parser.add_argument("--ghost-database-name", default=DEFAULT_GHOST_DATABASE_NAME)
+    parser.add_argument(
+        "--ghost-database-id",
+        "--table-id",
+        dest="ghost_database_id",
+        default=None,
+        help="Ghost Build database id to reuse if it exists; creates a new database if it does not.",
+    )
     parser.add_argument("--interval-seconds", type=float, default=30.0)
     parser.add_argument("--limit", type=int, default=0, help="Number of notes to stream; 0 means run forever.")
     parser.add_argument("--seed", type=int, default=None)
@@ -52,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     rng = random.Random(args.seed)
-    ghost_db = GhostBuildDatabase(args.ghost_database_name, args.ghost_state_path)
+    ghost_db = GhostBuildDatabase(args.ghost_database_name, args.ghost_state_path, args.ghost_database_id)
 
     limit = 1 if args.single_shot else args.limit
     streamed = 0
