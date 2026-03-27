@@ -7,9 +7,10 @@ from intelligence.api.services.ghost_client import (
     get_all_profiles,
     get_student_profile,
     get_student_snapshots,
+    get_student_literature,
 )
 
-app = FastAPI(title="PEP OS Intelligence API", version="0.1.0")
+app = FastAPI(title="Monty Intelligence API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,4 +70,19 @@ def student_suggestions(student_name: str):
         "severity": profile["current_severity"],
         "trend": profile["trend"],
         "suggestions": profile["latest_suggestions"],
+    }
+
+
+@app.get("/api/literature/{student_name}")
+def student_literature(student_name: str):
+    """Research papers matched to this student's behavioral profile."""
+    profile = get_student_profile(student_name)
+    if not profile:
+        raise HTTPException(404, f"Student '{student_name}' not found")
+    papers = get_student_literature(student_name)
+    return {
+        "student_name": student_name,
+        "severity": profile["current_severity"],
+        "behavioral_patterns": profile["latest_patterns"],
+        "papers": papers,
     }

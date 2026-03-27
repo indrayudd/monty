@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PEP OS — Student Intelligence Dashboard",
+  title: "Monty — Student Intelligence Dashboard",
   description: "Pedagogical Engagement & Performance OS",
 };
 

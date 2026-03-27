@@ -1,107 +1,86 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  fetchAllFlags,
-  fetchStudentFlags,
-  fetchInsights,
-  fetchSuggestions,
-  StudentProfile,
-  Snapshot,
-  InsightsResponse,
-  SuggestionsResponse,
-} from "./lib/api";
-import StudentSelector from "./components/StudentSelector";
-import FlagAlerts from "./components/FlagAlerts";
-import Interpretations from "./components/Interpretations";
-import Suggestions from "./components/Suggestions";
+import { fetchAllFlags, StudentProfile } from "./lib/api";
+import StatsCards from "./components/StatsCards";
+import StudentsTable from "./components/StudentsTable";
 
-export default function Dashboard() {
+export default function AdminDashboard() {
   const [students, setStudents] = useState<StudentProfile[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [insights, setInsights] = useState<InsightsResponse | null>(null);
-  const [suggestions, setSuggestions] = useState<SuggestionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     fetchAllFlags().then((data) => {
       setStudents(data);
       setLoading(false);
-      if (data.length > 0) {
-        setSelected(data[0].student_name);
-      }
     });
   }, []);
-
-  useEffect(() => {
-    if (!selected) return;
-    setDetailLoading(true);
-    Promise.all([
-      fetchStudentFlags(selected),
-      fetchInsights(selected),
-      fetchSuggestions(selected),
-    ]).then(([flagsData, insightsData, suggestionsData]) => {
-      setSnapshots(flagsData.snapshots);
-      setInsights(insightsData);
-      setSuggestions(suggestionsData);
-      setDetailLoading(false);
-    });
-  }, [selected]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950 text-gray-400">
-        Loading students...
+        Loading dashboard...
       </div>
     );
   }
 
-  const selectedProfile = students.find((s) => s.student_name === selected);
+  const needsAttention = students.filter(
+    (s) => s.current_severity === "red" || s.trend === "declining"
+  );
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100">
-      {/* Sidebar */}
-      <aside className="w-64 border-r border-gray-800 bg-gray-900/50 p-4 overflow-y-auto flex-shrink-0">
-        <h1 className="text-lg font-bold text-white mb-1">PEP OS</h1>
-        <p className="text-xs text-gray-500 mb-6">Student Intelligence Dashboard</p>
-        <StudentSelector
-          students={students}
-          selected={selected}
-          onSelect={setSelected}
-        />
-      </aside>
+    <div className="min-h-screen bg-gray-950 text-gray-100">
+      {/* Header */}
+      <header className="border-b border-gray-800 px-8 py-5">
+        <h1 className="text-2xl font-bold text-white">Monty</h1>
+        <p className="text-sm text-gray-500">Admin Dashboard</p>
+      </header>
 
-      {/* Main content — 3 panels */}
-      <main className="flex-1 flex overflow-hidden">
-        {detailLoading || !insights || !suggestions ? (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            {selected ? "Loading..." : "Select a student"}
+      <div className="max-w-7xl mx-auto px-8 py-8 space-y-8">
+        {/* Stats */}
+        <StatsCards students={students} />
+
+        {/* Needs Attention */}
+        {needsAttention.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              Needs Attention
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {needsAttention.map((s) => (
+                <a
+                  key={s.student_name}
+                  href={`/student/${encodeURIComponent(s.student_name)}`}
+                  className="bg-gray-800/60 border border-gray-700 rounded-lg p-4 hover:border-gray-600 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        s.current_severity === "red" ? "bg-red-500" : s.current_severity === "yellow" ? "bg-yellow-400" : "bg-green-500"
+                      }`}
+                    />
+                    <span className="text-sm font-medium text-white">{s.student_name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 line-clamp-2">{s.latest_summary}</p>
+                  <div className="mt-2 text-xs">
+                    <span className={s.trend === "declining" ? "text-red-400" : "text-gray-400"}>
+                      {s.trend === "declining" ? "\u2193 Declining" : s.trend === "improving" ? "\u2191 Improving" : "\u2192 Stable"}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
-        ) : (
-          <>
-            {/* Panel 1: Flag Alerts */}
-            <section className="flex-1 border-r border-gray-800 p-5 overflow-y-auto">
-              <FlagAlerts
-                snapshots={snapshots}
-                studentName={selected || ""}
-                trend={selectedProfile?.trend || "stable"}
-              />
-            </section>
-
-            {/* Panel 2: Interpretations */}
-            <section className="flex-1 border-r border-gray-800 p-5 overflow-y-auto">
-              <Interpretations insights={insights} snapshots={snapshots} />
-            </section>
-
-            {/* Panel 3: Suggestions */}
-            <section className="flex-1 p-5 overflow-y-auto">
-              <Suggestions data={suggestions} />
-            </section>
-          </>
         )}
-      </main>
+
+        {/* All Students Table */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+            All Students
+          </h2>
+          <StudentsTable students={students} />
+        </div>
+      </div>
     </div>
   );
 }

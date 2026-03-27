@@ -128,3 +128,65 @@ def get_student_snapshots(student_name: str) -> list[dict]:
 
 def _sev_rank(s: str) -> int:
     return {"green": 0, "yellow": 1, "red": 2}.get(s, 1)
+
+
+# --- Literature linking ---
+
+def ensure_literature_table() -> None:
+    with _conn(DB2_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS student_literature (
+                id BIGSERIAL PRIMARY KEY,
+                student_name TEXT NOT NULL,
+                search_query TEXT NOT NULL,
+                openalex_id TEXT NOT NULL,
+                title TEXT,
+                authors TEXT,
+                publication_year INT,
+                cited_by_count INT DEFAULT 0,
+                abstract TEXT,
+                landing_page_url TEXT,
+                relevance_summary TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (student_name, openalex_id)
+            );
+            """
+        )
+        conn.commit()
+
+
+def insert_literature(row: dict) -> None:
+    with _conn(DB2_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO student_literature
+                (student_name, search_query, openalex_id, title, authors,
+                 publication_year, cited_by_count, abstract, landing_page_url, relevance_summary)
+            VALUES
+                (%(student_name)s, %(search_query)s, %(openalex_id)s, %(title)s, %(authors)s,
+                 %(publication_year)s, %(cited_by_count)s, %(abstract)s, %(landing_page_url)s, %(relevance_summary)s)
+            ON CONFLICT (student_name, openalex_id) DO UPDATE SET
+                relevance_summary = EXCLUDED.relevance_summary,
+                search_query = EXCLUDED.search_query,
+                created_at = NOW();
+            """,
+            row,
+        )
+        conn.commit()
+
+
+def get_student_literature(student_name: str) -> list[dict]:
+    with _conn(DB2_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT openalex_id, title, authors, publication_year, cited_by_count,
+                   abstract, landing_page_url, search_query, relevance_summary, created_at
+            FROM student_literature
+            WHERE student_name = %s
+            ORDER BY cited_by_count DESC;
+            """,
+            (student_name,),
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]

@@ -31,6 +31,41 @@ Severity guide for a SINGLE observation:
 Be decisive. A calm, focused work period is GREEN. A note mentioning frustration, reminders, or peer issues is YELLOW or RED depending on intensity and duration."""
 
 
+QUERY_PROMPT = """You are an expert in early childhood education research. Given a student's aggregated behavioral profile from their Montessori classroom, generate 1-2 targeted academic search queries for finding relevant research papers on OpenAlex.
+
+The queries should:
+- Focus on the dominant behavioral patterns, not individual incidents
+- Use academic/research terminology (e.g. "self-regulation" not "calming down")
+- Be specific enough to return useful results but not so narrow they return nothing
+
+Return ONLY valid JSON:
+{
+  "queries": ["query 1", "query 2"],
+  "rationale": "Brief explanation of why these queries capture the student's behavioral profile"
+}"""
+
+
+def generate_search_queries(student_name: str, patterns: str, summary: str, severity: str) -> dict:
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": QUERY_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Student: {student_name}\n"
+                    f"Severity: {severity}\n"
+                    f"Behavioral patterns: {patterns}\n"
+                    f"Summary: {summary}"
+                ),
+            },
+        ],
+        temperature=0.3,
+        response_format={"type": "json_object"},
+    )
+    return json.loads(response.choices[0].message.content)
+
+
 def assess_note(student_name: str, note_body: str) -> dict:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
