@@ -31,17 +31,31 @@ Severity guide for a SINGLE observation:
 Be decisive. A calm, focused work period is GREEN. A note mentioning frustration, reminders, or peer issues is YELLOW or RED depending on intensity and duration."""
 
 
-QUERY_PROMPT = """You are an expert in early childhood education research. Given a student's aggregated behavioral profile from their Montessori classroom, generate 1-2 targeted academic search queries for finding relevant research papers on OpenAlex.
+QUERY_PROMPT = """You are an expert in early childhood education research, specifically Montessori pedagogy for toddlers and preschoolers (ages 2-6).
 
-The queries should:
-- Focus on the dominant behavioral patterns, not individual incidents
-- Use academic/research terminology (e.g. "self-regulation" not "calming down")
-- Be specific enough to return useful results but not so narrow they return nothing
+Given a student's aggregated behavioral profile from their Montessori classroom, generate exactly 2 targeted academic search queries for finding relevant research papers.
+
+STRICT RULES for queries:
+- Every query MUST include "toddler" or "preschool" AND "Montessori" or "early childhood classroom"
+- Focus on the SPECIFIC behavioral pattern (e.g. "peer boundary", "transition difficulty", "turn-taking", "frustration tolerance") — not generic terms
+- Use precise academic terminology: "executive function", "self-regulation", "prosocial behavior", "emotional dysregulation", "sensory processing", "work cycle engagement"
+- Do NOT use vague terms like "strategies", "impact", "behavioral interventions" alone
+- Queries should be 6-10 words, not full sentences
+
+GOOD examples:
+- "toddler Montessori peer conflict prosocial behavior"
+- "preschool self-regulation frustration tolerance classroom"
+- "toddler turn-taking executive function early childhood"
+- "Montessori work cycle concentration preschool engagement"
+
+BAD examples (too generic, will return off-topic papers):
+- "self-regulation strategies in early childhood education"
+- "impact of adult intervention on behavioral dysregulation"
 
 Return ONLY valid JSON:
 {
   "queries": ["query 1", "query 2"],
-  "rationale": "Brief explanation of why these queries capture the student's behavioral profile"
+  "rationale": "Brief explanation"
 }"""
 
 

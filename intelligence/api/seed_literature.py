@@ -70,10 +70,11 @@ def run():
         for query in queries:
             print(f"  -> searching: {query}")
             try:
+                # Filter: open access + early childhood / child dev education topics + published 2010+
                 search_resp = openalex.search_works(
                     topic_query=query,
-                    per_page=5,
-                    extra_filter="open_access.is_oa:true",
+                    per_page=10,
+                    extra_filter="open_access.is_oa:true,topics.id:T10589|T13987|T14290,publication_year:>2009",
                     select="id,display_name,publication_year,cited_by_count,abstract_inverted_index,authorships,primary_location,best_oa_location,open_access,has_content,ids",
                 )
             except Exception as exc:
