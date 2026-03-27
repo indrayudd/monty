@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import json
+import csv
+import io
 import shutil
 import subprocess
 
@@ -18,6 +20,13 @@ class GhostBuildError(RuntimeError):
 class GhostBuildState:
     database_id: str
     database_name: str
+
+
+@dataclass(frozen=True)
+class StoredObservation:
+    id: int
+    name: str
+    body: str
 
 
 class GhostBuildDatabase:
@@ -50,6 +59,32 @@ class GhostBuildDatabase:
             """
         )
         return "INSERT" in result.stdout or "INSERT" in (result.stderr or "")
+
+    def read_latest_note(self) -> StoredObservation | None:
+        rows = self.read_notes(limit=1, order="desc")
+        return rows[0] if rows else None
+
+    def read_notes(self, limit: int = 1, after_id: int | None = None, order: str = "asc") -> list[StoredObservation]:
+        if limit <= 0:
+            return []
+
+        order_sql = "ASC" if order.lower() != "desc" else "DESC"
+        where_clause = ""
+        if after_id is not None:
+            where_clause = f"WHERE id > {int(after_id)}"
+
+        result = self._run_sql(
+            f"""
+            COPY (
+                SELECT id, name, body
+                FROM ingested_observations
+                {where_clause}
+                ORDER BY id {order_sql}
+                LIMIT {int(limit)}
+            ) TO STDOUT WITH (FORMAT csv, HEADER true);
+            """
+        )
+        return self._parse_notes_csv(result.stdout)
 
     def _resolve_state(self) -> GhostBuildState:
         if self._state is not None:
@@ -188,3 +223,26 @@ class GhostBuildDatabase:
     @staticmethod
     def _sql_literal(value: str) -> str:
         return "'" + value.replace("'", "''") + "'"
+
+    @staticmethod
+    def _parse_notes_csv(stdout: str) -> list[StoredObservation]:
+        text = stdout.strip()
+        if not text:
+            return []
+
+        reader = csv.DictReader(io.StringIO(text))
+        notes: list[StoredObservation] = []
+        for row in reader:
+            raw_id = (row.get("id") or "").strip()
+            raw_name = (row.get("name") or "").strip()
+            raw_body = (row.get("body") or "").strip()
+            if not raw_id or not raw_name or not raw_body:
+                continue
+            notes.append(
+                StoredObservation(
+                    id=int(raw_id),
+                    name=raw_name,
+                    body=raw_body,
+                )
+            )
+        return notes
