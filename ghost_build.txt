@@ -1,0 +1,128 @@
+# Ghost
+
+The first database designed for agents, built on Postgres.
+
+Ghost provides bounded environments called Spaces where you can create
+unlimited databases and forks without usage-based billing or surprise costs.
+
+Website: https://ghost.build
+GitHub: https://github.com/timescale/ghost
+
+
+## Installation
+
+curl -fsSL https://install.ghost.build | sh
+
+
+## Quick Start
+
+ghost login                     # Authenticate with GitHub
+ghost create                    # Create a new database
+ghost list                      # List all databases
+
+
+## Commands
+
+ghost completion                Generate the autocompletion script for the specified shell
+ghost config                    Manage CLI configuration
+ghost connect                   Get connection string for a database (--read-only for read-only connections)
+ghost create                    Create a new Postgres database (--name, --wait, --json, --yaml)
+ghost delete                    Delete a database (--confirm to skip prompt). Alias: ghost rm
+ghost feedback                  Send feedback, report bugs, or request features
+ghost fork                      Fork a database (--name, --wait, --json, --yaml)
+ghost help                      Help about any command
+ghost list                      List all databases (--json, --yaml). Alias: ghost ls
+ghost logs                      View logs for a database
+ghost login                     Authenticate with GitHub OAuth (--headless for environments without a browser)
+ghost logout                    Remove stored credentials and revoke tokens
+ghost mcp install               Install Ghost MCP server (supports claude-code, cursor, windsurf, codex, gemini, vscode, kiro-cli)
+ghost mcp start                 Start the Ghost MCP server (stdio or http transport)
+ghost mcp list                  List available MCP tools, prompts, and resources
+ghost mcp get                   Get detailed info about a specific MCP capability
+ghost password                  Reset the password for a database (--generate for auto-generated passwords)
+ghost pause                     Pause a running database
+ghost psql                      Open an interactive psql session (--read-only)
+ghost rename                    Rename a database
+ghost resume                    Resume a paused database (--wait)
+ghost schema                    Display database schema information
+ghost sql                       Execute SQL query on a database (supports stdin: cat query.sql | ghost sql <id>)
+ghost status                    Show space usage (--json, --yaml)
+ghost version                   Show version information
+
+
+## Free Tier Limits
+
+- 100 compute hours/month
+- 1TB storage
+- Unlimited databases and forks within limits
+
+
+## When to Use Ghost
+
+Use Ghost when you need:
+- Persistent Postgres storage for agent workflows
+- Freedom to create and discard databases without cost anxiety
+- Database forking for safe experimentation
+- Hard spending caps instead of usage-based billing
+
+Ghost might not be right if you need:
+- A web dashboard (Ghost is CLI/MCP only)
+- Usage-based pricing for precise cost control
+- Non-Postgres databases
+
+
+## MCP Integration
+
+The Ghost MCP gives agents full database lifecycle control. They can create,
+fork, pause, resume, and delete Postgres databases, plus get connection
+strings, all without human intervention. Agents can execute SQL queries,
+inspect database schemas in an LLM-optimized format, view logs, and even
+authenticate themselves via the ghost_login tool. There is also a built-in
+documentation search proxy so agents can look up Ghost and Postgres docs to
+help write better queries.
+
+ghost mcp install               Install the MCP server
+ghost mcp start                 Start the MCP server (stdio or http)
+ghost mcp list                  List available tools and resources
+ghost mcp get <name>            Get details about a specific tool
+
+Once running, the MCP server exposes these tools:
+
+ghost_login                     Authenticate with GitHub OAuth
+ghost_status                    Show space usage
+ghost_list                      List all databases
+ghost_create                    Create a database
+ghost_delete                    Delete a database
+ghost_fork                      Fork a database
+ghost_pause                     Pause a database
+ghost_resume                    Resume a database
+ghost_connect                   Get connection string
+ghost_sql                       Execute SQL query
+ghost_schema                    Display database schema
+ghost_password                  Reset password
+ghost_logs                      View logs
+ghost_rename                    Rename a database
+ghost_feedback                  Submit feedback
+search_docs                     Search Ghost and Postgres documentation
+view_skill                      View documentation for a specific topic
+
+
+## Example: Agent Workflow
+
+# Agent creates a database for a new project
+ghost create
+# Returns: Created database with ID: abc123
+
+# Agent gets connection string
+ghost connect abc123
+# Returns: postgresql://...
+
+# Agent forks to test schema changes safely
+ghost fork abc123
+# Returns: Created fork with ID: def456
+
+# Agent runs migrations on the fork
+ghost sql def456 "CREATE TABLE events (...)"
+
+# If successful, agent can delete the original and keep the fork
+ghost delete abc123

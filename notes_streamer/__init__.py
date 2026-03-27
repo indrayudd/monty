@@ -1,0 +1,2 @@
+"""Notes streamer package."""
+

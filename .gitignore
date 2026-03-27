@@ -1,0 +1,4 @@
+.vscode/
+__pycache__/
+*.pyc
+notes_streamer/.ghost-build.json
