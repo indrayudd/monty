@@ -42,27 +42,14 @@ class GhostBuildDatabase:
         )
 
     def insert_note(self, note: ParsedNote) -> bool:
-        exists = self._run_sql(
-            f"""
-            SELECT 1
-            FROM ingested_observations
-            WHERE name = {self._sql_literal(note.name)}
-              AND body = {self._sql_literal(note.body)}
-            LIMIT 1;
-            """
-        )
-        if exists.stdout.strip():
-            return False
-
         result = self._run_sql(
             f"""
             INSERT INTO ingested_observations (name, body)
             VALUES ({self._sql_literal(note.name)}, {self._sql_literal(note.body)})
-            ON CONFLICT (name, body) DO NOTHING
-            RETURNING id;
+            ON CONFLICT (name, body) DO NOTHING;
             """
         )
-        return bool(result.stdout.strip())
+        return "INSERT" in result.stdout or "INSERT" in (result.stderr or "")
 
     def _resolve_state(self) -> GhostBuildState:
         if self._state is not None:
