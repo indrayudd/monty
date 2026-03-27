@@ -6,10 +6,11 @@ from pathlib import Path
 
 from openai import OpenAI
 
-_env_path = Path(__file__).resolve().parents[3] / "contracts" / ".env"
+_env_path = Path(__file__).resolve().parents[3] / ".env"
 for line in _env_path.read_text().strip().splitlines():
-    if line.startswith("OPENAI_API_KEY="):
-        os.environ["OPENAI_API_KEY"] = line.split("=", 1)[1].strip()
+    key, _, val = line.partition("=")
+    if key.strip() and val.strip() and key.strip() not in os.environ:
+        os.environ[key.strip()] = val.strip()
 
 client = OpenAI()
 
