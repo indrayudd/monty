@@ -23,8 +23,8 @@ for env_path in _ENV_PATHS:
             os.environ[key.strip()] = val.strip()
 
 
-DEFAULT_DB1_URL = "postgresql://tsdbadmin:hfkcgdldf7nylyrv@e3ho885uvg.hb4jlylyua.tsdb.cloud.timescale.com:31313/tsdb"
-DEFAULT_DB2_URL = "postgresql://tsdbadmin:va4fd9zgfrleecd3@oman6716dt.hb4jlylyua.tsdb.cloud.timescale.com:39127/tsdb"
+DEFAULT_DB1_URL = "postgresql://tsdbadmin:cu3icrvyogvuibej@wwdclkvwu7.m5ptmvrzi0.tsdb.cloud.timescale.com:31109/tsdb"
+DEFAULT_DB2_URL = "postgresql://tsdbadmin:c7hrt7hy360h947u@h55j4jft23.m5ptmvrzi0.tsdb.cloud.timescale.com:38711/tsdb"
 
 
 def _notes_db_url() -> str:
@@ -44,7 +44,7 @@ def _agent_db_url() -> str:
 
 
 def _conn(url: str):
-    return psycopg2.connect(url, cursor_factory=RealDictCursor)
+    return psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
 
 
 def _fetchall(cur) -> list[dict]:
@@ -733,6 +733,34 @@ def set_runtime_value(key: str, value: Any) -> None:
             """,
             (key, str(value)),
         )
+        conn.commit()
+
+
+def set_runtime_values(values: dict[str, Any]) -> None:
+    if not values:
+        return
+    ensure_agent_tables()
+    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+        for key, value in values.items():
+            cur.execute(
+                """
+                INSERT INTO agent_runtime_state (key, value_text)
+                VALUES (%s, %s)
+                ON CONFLICT (key) DO UPDATE SET
+                    value_text = EXCLUDED.value_text,
+                    updated_at = NOW();
+                """,
+                (key, "" if value is None else str(value)),
+            )
+        conn.commit()
+
+
+def delete_runtime_keys(keys: list[str]) -> None:
+    if not keys:
+        return
+    ensure_agent_tables()
+    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM agent_runtime_state WHERE key = ANY(%s);", (keys,))
         conn.commit()
 
 

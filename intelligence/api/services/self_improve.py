@@ -16,6 +16,7 @@ from intelligence.api.services.ghost_client import (
     insert_snapshot,
     replace_personality_graph,
     set_runtime_value,
+    set_runtime_values,
     upsert_student_profile_state,
 )
 from intelligence.api.services.kg_agent import enrich_student_knowledge
@@ -148,6 +149,24 @@ def _log_action(student_name: str, note_id: int | None, action_kind: str, status
     )
 
 
+def _set_stage(
+    stage: str,
+    *,
+    student_name: str | None = None,
+    note_id: int | None = None,
+    message: str | None = None,
+) -> None:
+    set_runtime_values(
+        {
+            "current_stage": stage,
+            "current_student": student_name,
+            "current_note_id": note_id,
+            "stage_started_at": _utcnow(),
+            "stage_message": message or "",
+        }
+    )
+
+
 def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
     last_processed = 0 if force_full else int(get_runtime_value("last_processed_note_id", "0") or "0")
     new_notes = get_notes_after(last_processed)
@@ -161,6 +180,7 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
         )
 
     if not new_notes:
+        _set_stage("waiting_for_note", message="Watching for the next classroom observation.")
         set_runtime_value("last_cycle_at", cycle_started_at)
         return {
             "cycle_started_at": cycle_started_at,
@@ -178,6 +198,13 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
     processed_students: list[dict] = []
 
     for student_name, student_new_notes in impacted.items():
+        latest_note_id = max(note["id"] for note in student_new_notes)
+        _set_stage(
+            "reassessing_student",
+            student_name=student_name,
+            note_id=latest_note_id,
+            message=f"Reassessing {student_name} from {len(student_new_notes)} new note(s).",
+        )
         if verbose:
             note_ids = [note["id"] for note in student_new_notes]
             print(
@@ -198,6 +225,12 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
 
         all_student_notes = get_notes_for_student(student_name)
         aggregate = assess_student_history(student_name, all_student_notes)
+        _set_stage(
+            "updating_profile",
+            student_name=student_name,
+            note_id=latest_note_id,
+            message=f"Updating cumulative profile for {student_name}.",
+        )
         profile_state = upsert_student_profile_state(student_name, aggregate, assessment_count=len(all_student_notes))
         replace_personality_graph(student_name, _build_personality_facets(aggregate))
 
@@ -228,6 +261,12 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
             )
         knowledge_payload = {"results": existing_knowledge, "new_nodes_created": 0, "queries": []}
         if emergency_terms or len(existing_knowledge) < 2:
+            _set_stage(
+                "enriching_knowledge",
+                student_name=student_name,
+                note_id=latest_note_id,
+                message=f"Expanding research memory for {student_name}.",
+            )
             knowledge_payload = enrich_student_knowledge(
                 student_name,
                 aggregate,
@@ -237,7 +276,12 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
 
         total_knowledge_nodes += int(knowledge_payload.get("new_nodes_created") or 0)
         knowledge_results = knowledge_payload.get("results") or []
-        latest_note_id = max(note["id"] for note in student_new_notes)
+        _set_stage(
+            "writing_alert",
+            student_name=student_name,
+            note_id=latest_note_id,
+            message=f"Writing alert and recommendations for {student_name}.",
+        )
         alert = _create_or_update_alert(student_name, latest_note_id, aggregate, emergency_terms, knowledge_results)
 
         _log_action(
@@ -289,6 +333,10 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
     set_runtime_value("last_processed_note_id", max(note["id"] for note in new_notes))
     set_runtime_value("last_cycle_at", cycle_started_at)
     set_runtime_value("last_cycle_student_count", len(processed_students))
+    _set_stage(
+        "cycle_complete",
+        message=f"Completed {len(new_notes)} note(s) across {len(processed_students)} student(s).",
+    )
 
     return {
         "cycle_started_at": cycle_started_at,

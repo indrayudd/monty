@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from intelligence.api.services.demo_runtime import bootstrap_demo, get_demo_overview
+from intelligence.api.services.demo_runtime import bootstrap_demo, get_demo_overview, reset_demo, start_demo, stop_demo
 from intelligence.api.services.ghost_client import (
-    count_notes,
     ensure_agent_tables,
     ensure_notes_table,
     get_alerts,
@@ -53,8 +51,6 @@ app.add_middleware(
 def startup() -> None:
     ensure_agent_tables()
     ensure_notes_table()
-    if os.environ.get("MONTY_ENABLE_DEMO_RUNTIME", "1") == "1" and count_notes() == 0:
-        bootstrap_demo(reset=False)
 
 
 @app.get("/api/health")
@@ -174,6 +170,21 @@ def kg_query(request: KGQueryRequest):
 @app.post("/api/demo/bootstrap")
 def demo_bootstrap(request: DemoBootstrapRequest):
     return bootstrap_demo(reset=request.reset)
+
+
+@app.post("/api/demo/start")
+def demo_start(request: DemoBootstrapRequest):
+    return start_demo(reset=request.reset)
+
+
+@app.post("/api/demo/reset")
+def demo_reset():
+    return reset_demo()
+
+
+@app.post("/api/demo/stop")
+def demo_stop():
+    return stop_demo()
 
 
 @app.get("/api/demo/overview")
