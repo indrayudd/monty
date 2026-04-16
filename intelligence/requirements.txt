@@ -3,4 +3,4 @@ uvicorn[standard]
 openai
 psycopg2-binary
 python-dotenv
-python-frontmatter==1.1.0
+python-frontmatter
