@@ -114,33 +114,6 @@ def ensure_agent_tables() -> None:
                 UNIQUE (student_name, openalex_id)
             );
 
-            CREATE TABLE IF NOT EXISTS student_personality_graph (
-                id BIGSERIAL PRIMARY KEY,
-                student_name TEXT NOT NULL,
-                facet_type TEXT NOT NULL,
-                facet_value TEXT NOT NULL,
-                evidence TEXT,
-                confidence DOUBLE PRECISION DEFAULT 0.5,
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE (student_name, facet_type, facet_value)
-            );
-
-            CREATE TABLE IF NOT EXISTS knowledge_graph (
-                id BIGSERIAL PRIMARY KEY,
-                student_name TEXT,
-                topic TEXT NOT NULL,
-                search_query TEXT,
-                source_title TEXT,
-                source_url TEXT NOT NULL,
-                insights_json TEXT NOT NULL,
-                related_topics_json TEXT NOT NULL,
-                confidence DOUBLE PRECISION DEFAULT 0.5,
-                evidence_summary TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                UNIQUE (student_name, source_url, topic)
-            );
-
             CREATE TABLE IF NOT EXISTS student_alerts (
                 id BIGSERIAL PRIMARY KEY,
                 student_name TEXT NOT NULL,
