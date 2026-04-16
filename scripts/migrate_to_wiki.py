@@ -24,6 +24,7 @@ from intelligence.api.services.ghost_client import (
 )
 from intelligence.api.services import wiki_writer, wiki_indexer
 from intelligence.api.services.wiki_paths import (
+    incident_path,
     source_paper_path,
     slugify,
 )
@@ -65,6 +66,9 @@ def migrate_snapshots(dry_run: bool) -> int:
             ts = ts if isinstance(ts, str) else ts.isoformat()
             summary = s.get("profile_summary") or ""
             slug_hint = slugify(summary[:60]) or f"snap-{s.get('note_id', n)}"
+            expected_path = incident_path(name, ts, slug_hint)
+            if expected_path.exists():
+                continue  # already migrated
             try:
                 wiki_writer.write_incident(
                     student_name=name,
