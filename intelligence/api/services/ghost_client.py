@@ -338,6 +338,21 @@ def insert_ingested_note(name: str, body: str) -> dict | None:
         return row
 
 
+def insert_observation(name: str, body: str) -> int:
+    """Insert an observation into ingested_observations and return its id."""
+    ensure_notes_table()
+    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO ingested_observations (name, body) VALUES (%s, %s) "
+            "ON CONFLICT (name, body) DO UPDATE SET body = EXCLUDED.body "
+            "RETURNING id",
+            (name, body),
+        )
+        row = _fetchone(cur)
+        conn.commit()
+        return (row or {}).get("id", 0)
+
+
 def get_recent_notes(limit: int = 25) -> list[dict]:
     ensure_notes_table()
     with _conn(_notes_db_url()) as conn, conn.cursor() as cur:

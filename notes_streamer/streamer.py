@@ -1,121 +1,82 @@
 from __future__ import annotations
 
-from pathlib import Path
-import argparse
 import random
 import sys
 import time
+from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from notes_streamer.ghost_build import GhostBuildDatabase, GhostBuildError
-    from notes_streamer.note_parser import NoteParseError, parse_note_file
-else:
-    from .ghost_build import GhostBuildDatabase, GhostBuildError
-    from .note_parser import NoteParseError, parse_note_file
+
+from notes_streamer.persona_engine import generate_next_note, PersonaOverrides, list_personas
+from intelligence.api.services.ghost_client import (
+    insert_observation,
+    get_runtime_overrides,
+)
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parent
-DEFAULT_GHOST_STATE_PATH = PACKAGE_ROOT / ".ghost-build.json"
-DEFAULT_NOTES_DIR = PACKAGE_ROOT / "notes"
-DEFAULT_GHOST_DATABASE_NAME = "test-db"
+def _pick_persona() -> dict:
+    """Pick a persona weighted by activity_weight (default 1.0)."""
+    personas = list_personas()
+    overrides = get_runtime_overrides()
+    weighted: list[tuple[dict, float]] = []
+    for p in personas:
+        block = overrides.get(p["name"], {})
+        w = float(block.get("activity_weight", 1.0))
+        if w <= 0:
+            continue
+        weighted.append((p, w))
+    if not weighted:
+        # All personas paused — fall back to picking at random anyway so the loop doesn't stall.
+        return random.choice(personas)
+    total = sum(w for _, w in weighted)
+    r = random.uniform(0, total)
+    upto = 0.0
+    for p, w in weighted:
+        upto += w
+        if upto >= r:
+            return p
+    return weighted[-1][0]
 
 
-def collect_note_paths(notes_dir: Path) -> list[Path]:
-    if not notes_dir.exists():
-        raise FileNotFoundError(f"Notes directory not found: {notes_dir}")
-    return sorted(path for path in notes_dir.glob("*.txt") if path.is_file())
-
-
-def stream_once(notes_dir: Path, ghost_db: GhostBuildDatabase, rng: random.Random) -> Path:
-    note_paths = collect_note_paths(notes_dir)
-    if not note_paths:
-        raise FileNotFoundError(f"No note files found in {notes_dir}")
-
-    source_path = rng.choice(note_paths)
-    parsed = parse_note_file(source_path)
-    inserted = ghost_db.insert_note(parsed)
-    status = "inserted" if inserted else "skipped"
-    print(f"[{status}] {parsed.name}", flush=True)
-    return source_path
-
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Stream random Montessori notes into Ghost Build.")
-    parser.add_argument("--notes-dir", type=Path, default=DEFAULT_NOTES_DIR)
-    parser.add_argument("--ghost-state-path", type=Path, default=DEFAULT_GHOST_STATE_PATH)
-    parser.add_argument("--ghost-database-name", default=DEFAULT_GHOST_DATABASE_NAME)
-    parser.add_argument(
-        "--ghost-database-id",
-        "--table-id",
-        dest="ghost_database_id",
-        default=None,
-        help="Ghost Build database id to reuse if it exists; creates a new database if it does not.",
+def stream_one_note() -> None:
+    """Generate and insert one persona-driven observation."""
+    persona = _pick_persona()
+    overrides_block = get_runtime_overrides().get(persona["name"], {})
+    po = PersonaOverrides(
+        slider=float(overrides_block.get("slider", 0.0)),
+        flavor_override=overrides_block.get("flavor_override"),
+        activity_weight=float(overrides_block.get("activity_weight", 1.0)),
+        inject_next=overrides_block.get("inject_next"),
+        interact_with=overrides_block.get("interact_with"),
+        interact_scene_hint=overrides_block.get("interact_scene_hint"),
     )
-    parser.add_argument(
-        "--interval-seconds",
-        type=float,
-        default=1.0,
-        help="Fixed interval between streamed notes. Defaults to 1 second for demo responsiveness.",
-    )
-    parser.add_argument("--interval-min-seconds", type=float, default=1.0)
-    parser.add_argument("--interval-max-seconds", type=float, default=1.0)
-    parser.add_argument("--limit", type=int, default=0, help="Number of notes to stream; 0 means run forever.")
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--single-shot", action="store_true", help="Stream exactly one note and exit.")
-    return parser
+    note = generate_next_note(persona["name"], overrides=po)
+    insert_observation(name=note["name"], body=note["body"])
+    print(f"[streamer] inserted note for {note['name']} (severity_hint={note['severity_hint']})", flush=True)
+
+    # Clear one-shot fields so they don't repeat next tick.
+    if overrides_block.get("inject_next") or overrides_block.get("interact_with"):
+        from intelligence.api.services.ghost_client import set_runtime_overrides
+        ov = get_runtime_overrides()
+        block = ov.get(persona["name"], {})
+        block.pop("inject_next", None)
+        block.pop("interact_with", None)
+        block.pop("interact_scene_hint", None)
+        ov[persona["name"]] = block
+        set_runtime_overrides(ov)
 
 
-def _next_sleep_seconds(args: argparse.Namespace, rng: random.Random) -> float:
-    if args.interval_seconds is not None:
-        return max(args.interval_seconds, 0.0)
-
-    low = max(args.interval_min_seconds, 0.0)
-    high = max(args.interval_max_seconds, 0.0)
-    if high < low:
-        raise ValueError("--interval-max-seconds must be >= --interval-min-seconds")
-    return rng.uniform(low, high)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
-    rng = random.Random(args.seed)
-    ghost_db = GhostBuildDatabase(args.ghost_database_name, args.ghost_state_path, args.ghost_database_id)
-
-    limit = 1 if args.single_shot else args.limit
-    streamed = 0
-    note_queue: list[Path] = []
-
+def main() -> int:
+    print("[streamer] starting persona-driven note stream", flush=True)
     try:
-        print(
-            f"[streamer] starting notes stream from {args.notes_dir} "
-            f"with interval={_next_sleep_seconds(args, rng):.1f}s",
-            flush=True,
-        )
-        ghost_db.initialize()
         while True:
-            if not note_queue:
-                note_queue = collect_note_paths(args.notes_dir)
-                if not note_queue:
-                    raise FileNotFoundError(f"No note files found in {args.notes_dir}")
-                rng.shuffle(note_queue)
-
-            source_path = note_queue.pop()
-            parsed = parse_note_file(source_path)
-            inserted = ghost_db.insert_note(parsed)
-            status = "inserted" if inserted else "skipped"
-            print(f"[{status}] {parsed.name}", flush=True)
-            streamed += 1
-            if limit and streamed >= limit:
-                break
-            if not args.single_shot:
-                time.sleep(_next_sleep_seconds(args, rng))
+            stream_one_note()
+            time.sleep(random.uniform(2.0, 8.0))
     except (KeyboardInterrupt, BrokenPipeError):
         return 130
-    except (FileNotFoundError, NoteParseError, GhostBuildError, ValueError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    except Exception as exc:
+        print(f"[streamer] error: {exc}", file=sys.stderr)
         return 1
 
     return 0
