@@ -2,11 +2,10 @@
 
 Replaces the static-corpus generator (scripts/generate_notes_corpus.py).
 Called by the streamer on each tick, and by POST /api/persona/next-note.
-
-This module is a stub in Phase 0. Full implementation in Phase 1.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 
@@ -20,11 +19,23 @@ class PersonaOverrides:
     interact_scene_hint: str | None = None
 
 
-def generate_next_note(student_name: str, overrides: PersonaOverrides | None = None) -> dict:
-    """Return {name, body, severity_hint}. Caller inserts into ingested_observations."""
-    raise NotImplementedError("persona_engine.generate_next_note — implement in Phase 1")
+import frontmatter
+from intelligence.api.services.wiki_paths import WIKI_ROOT
 
 
 def list_personas() -> list[dict]:
-    """Return persona summaries from wiki/personas/*.md including current overrides."""
-    raise NotImplementedError("persona_engine.list_personas — implement in Phase 1")
+    """Return persona summaries from wiki/personas/*.md."""
+    personas_dir = WIKI_ROOT / "personas"
+    out: list[dict] = []
+    for path in sorted(personas_dir.glob("*.md")):
+        post = frontmatter.load(path)
+        out.append({
+            "name": post.metadata.get("name", path.stem.replace("_", " ")),
+            "age_band": post.metadata.get("age_band"),
+            "temperament_axes": post.metadata.get("temperament_axes", {}),
+            "dysfunction_flavor": post.metadata.get("dysfunction_flavor"),
+            "recurring_companions": post.metadata.get("recurring_companions", []),
+            "narrative": post.content.strip(),
+            "file_path": str(path.relative_to(WIKI_ROOT)),
+        })
+    return out
