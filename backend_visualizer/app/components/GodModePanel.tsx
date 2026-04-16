@@ -112,6 +112,12 @@ export function GodModePanel() {
                 Stop
               </button>
             </div>
+            <button
+              onClick={async () => { const r = await api.wikiReindex(); alert(`Reindexed: ${JSON.stringify(r)}`); }}
+              className="mt-2 w-full px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70"
+            >
+              Reindex wiki (full rebuild)
+            </button>
           </aside>
         </div>
       )}

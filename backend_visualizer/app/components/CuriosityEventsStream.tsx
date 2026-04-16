@@ -62,23 +62,18 @@ export function CuriosityEventsStream() {
             <span className="col-span-1 text-right">
               {ev.curiosity_score.toFixed(2)}
             </span>
-            <span
-              className="col-span-4 text-white/50 truncate"
-              title={Object.entries(ev.factors)
-                .map(
-                  ([k, v]) =>
-                    `${k}=${typeof v === "number" ? v.toFixed(3) : v}`,
-                )
-                .join(" ")}
-            >
-              {Object.entries(ev.factors)
-                .map(
-                  ([k, v]) =>
-                    `${k.slice(0, 3)}=${
-                      typeof v === "number" ? v.toFixed(2) : String(v)
-                    }`,
-                )
-                .join(" ")}
+            <span className="col-span-4 flex items-end gap-0.5 h-4">
+              {["novelty","recurrence_gap","cross_student","surprise","severity_weight","recency"].map(k => {
+                const v = Math.max(0, Math.min(1, (ev.factors?.[k] as number) ?? 0));
+                return (
+                  <span
+                    key={k}
+                    title={`${k}: ${v.toFixed(2)}`}
+                    className="w-2 bg-white/70 hover:bg-white rounded-t"
+                    style={{ height: `${Math.max(2, v * 100)}%` }}
+                  />
+                );
+              })}
             </span>
           </div>
         ))}

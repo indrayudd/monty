@@ -160,9 +160,12 @@ export function BehavioralKGPanel({
           const r = n.val;
           // halo
           if (n.curiosity >= 0.7) {
+            // ~1.5 Hz pulse, opacity 0.15..0.45
+            const phase = (Date.now() % 700) / 700;
+            const alpha = 0.15 + 0.30 * Math.abs(Math.sin(phase * Math.PI));
             ctx.beginPath();
-            ctx.arc(n.x, n.y, r + 6, 0, 2 * Math.PI);
-            ctx.fillStyle = "rgba(239, 68, 68, 0.25)";
+            ctx.arc(n.x, n.y, r + 6 + 2 * Math.sin(phase * Math.PI), 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(239, 68, 68, ${alpha.toFixed(3)})`;
             ctx.fill();
           } else if (n.curiosity >= 0.5) {
             ctx.beginPath();
