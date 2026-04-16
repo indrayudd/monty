@@ -11,9 +11,6 @@ import frontmatter as _fm
 from intelligence.api.services.curiosity import evaluate_gate
 from intelligence.api.services.ghost_client import (
     _agent_db_url,
-    get_knowledge_graph_entries,
-    insert_literature,
-    upsert_knowledge_graph_entry,
 )
 from intelligence.api.services.llm_service import (
     generate_search_queries,
@@ -151,6 +148,30 @@ def _link_paper_to_student(student_name: str, paper_meta: dict) -> None:
         f.write(line)
 
 
+def _wiki_paper_entries(student_name: str | None, query: str | None, limit: int = 8) -> list[dict]:
+    """Return paper entries from the wiki index (behavioral_nodes / student_incidents)
+    as a list of lightweight dicts — replaces the legacy get_knowledge_graph_entries call."""
+    try:
+        with _db() as conn:
+            with conn.cursor() as cur:
+                if student_name:
+                    cur.execute(
+                        "SELECT slug, summary, literature_refs, last_research_fetched_at "
+                        "FROM behavioral_nodes WHERE summary ILIKE %s LIMIT %s",
+                        (f"%{(query or '')[:60]}%", limit),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT slug, summary, literature_refs, last_research_fetched_at "
+                        "FROM behavioral_nodes LIMIT %s",
+                        (limit,),
+                    )
+                rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
 def _mark_node_researched(slug_full: str, paper_count: int) -> None:
     """Update behavioral_nodes.last_research_fetched_at and increment literature_refs."""
     slug = slug_full.split("/")[-1]
@@ -208,22 +229,6 @@ def _store_openalex_result(student_name: str | None, query: str, work: dict, con
         context=context_text,
     )
 
-    if student_name:
-        insert_literature(
-            {
-                "student_name": student_name,
-                "search_query": query,
-                "openalex_id": openalex_id,
-                "title": title,
-                "authors": authors_str,
-                "publication_year": meta.get("publication_year"),
-                "cited_by_count": meta.get("cited_by_count", 0),
-                "abstract": abstract[:2000] if abstract else None,
-                "landing_page_url": meta.get("landing_page_url"),
-                "relevance_summary": context_text[:500] if context_text else f"Matched query: {query}",
-            }
-        )
-
     entry = {
         "student_name": student_name,
         "topic": query,
@@ -235,9 +240,8 @@ def _store_openalex_result(student_name: str | None, query: str, work: dict, con
         "confidence": summary.get("confidence") or 0.7,
         "evidence_summary": context_text or abstract[:500],
     }
-    upsert_knowledge_graph_entry(entry)
 
-    # Phase 3: also write a wiki markdown page for the paper
+    # Write a wiki markdown page for the paper
     try:
         _write_paper_page(meta, abstract, summary, query, student_name)
         if student_name:
@@ -254,7 +258,7 @@ def enrich_student_knowledge(
     emergency_terms: list[str] | None = None,
     verbose: bool = False,
 ) -> dict:
-    existing = get_knowledge_graph_entries(student_name=student_name, query=assessment.get("behavioral_patterns"), limit=6)
+    existing = _wiki_paper_entries(student_name=student_name, query=assessment.get("behavioral_patterns"), limit=6)
 
     # Phase 3: third trigger — curiosity gate fires for any behavioral node in the assessment
     curious_nodes: list[str] = _curious_nodes_for_assessment(assessment)
@@ -372,7 +376,7 @@ def enrich_student_knowledge(
         for slug_full in curious_nodes:
             _mark_node_researched(slug_full, per_node)
 
-    results = get_knowledge_graph_entries(student_name=student_name, query=assessment.get("behavioral_patterns"), limit=8)
+    results = _wiki_paper_entries(student_name=student_name, query=assessment.get("behavioral_patterns"), limit=8)
     if verbose:
         print(
             f"[kg-agent] {student_name}: knowledge refresh complete total_nodes={len(results)} new_nodes={new_nodes}",
@@ -392,7 +396,7 @@ def query_knowledge_graph(query: str, context: dict[str, Any] | None = None) -> 
     if context and context.get("student_name"):
         student_name = str(context["student_name"])
 
-    existing = get_knowledge_graph_entries(student_name=student_name, query=query, limit=8)
+    existing = _wiki_paper_entries(student_name=student_name, query=query, limit=8)
     if len(existing) >= 3:
         return {"results": existing, "new_nodes_created": 0}
 
@@ -419,5 +423,5 @@ def query_knowledge_graph(query: str, context: dict[str, Any] | None = None) -> 
         if stored:
             new_nodes += 1
 
-    results = get_knowledge_graph_entries(student_name=student_name, query=query, limit=8)
+    results = _wiki_paper_entries(student_name=student_name, query=query, limit=8)
     return {"results": results, "new_nodes_created": new_nodes}
