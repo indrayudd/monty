@@ -223,6 +223,73 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                     flush=True,
                 )
 
+            # --- wiki_writer integration ---
+            # Expects assessment dict to include 'behavioral_nodes': list of {type, slug, title, summary, evidence}
+            # and 'behavioral_edges': list of {src_type, src_slug, rel, dst_type, dst_slug, evidence}.
+            # If assess_note doesn't yet return these fields (pre-Task 2.7), these are no-ops.
+            from intelligence.api.services import wiki_writer as _ww
+
+            assessment_nodes = snapshot.get("behavioral_nodes") or []
+            assessment_edges = snapshot.get("behavioral_edges") or []
+
+            ref_paths: list[str] = []
+            for n in assessment_nodes:
+                try:
+                    _ww.upsert_behavioral_node(
+                        node_type=n["type"],
+                        slug=n["slug"],
+                        title=n.get("title", n["slug"].replace("-", " ").title()),
+                        summary=n.get("summary", ""),
+                        new_evidence=n["evidence"],
+                        new_student_name=student_name,
+                    )
+                    ref_paths.append(f"behavioral/{n['type']}/{n['slug']}")
+                except Exception as _ne:
+                    import sys as _sys
+                    print(f"[self_improve] node upsert failed: {_ne}", file=_sys.stderr, flush=True)
+
+            for _e in assessment_edges:
+                try:
+                    _ww.upsert_behavioral_edge(
+                        src_type=_e["src_type"],
+                        src_slug=_e["src_slug"],
+                        rel=_e["rel"],
+                        dst_type=_e["dst_type"],
+                        dst_slug=_e["dst_slug"],
+                        new_evidence=_e["evidence"],
+                        new_student_name=student_name,
+                    )
+                except Exception as _ex:
+                    import sys as _sys
+                    print(f"[self_improve] edge upsert failed: {_ex}", file=_sys.stderr, flush=True)
+
+            # Write the incident page itself.
+            ingested_at = datetime.now(timezone.utc).isoformat()
+            try:
+                _ww.write_incident(
+                    student_name=student_name,
+                    note_id=note["id"],
+                    severity=snapshot.get("severity", "yellow"),
+                    note_body=note["body"],
+                    interpretation=snapshot.get("profile_summary", ""),
+                    behavioral_refs=ref_paths,
+                    peers_present=snapshot.get("peers_present", []) or [],
+                    educator=snapshot.get("educator", "") or "",
+                    ingested_at_iso=ingested_at,
+                    slug_hint=snapshot.get("slug_hint", f"note-{note['id']}"),
+                )
+                _ww.update_student_rollups(student_name)
+                _ww.update_indexes()
+                _ww.append_log(
+                    "incident_written",
+                    f"{student_name} note #{note['id']}",
+                    student_name=student_name,
+                )
+            except Exception as _ex:
+                import sys as _sys
+                print(f"[self_improve] wiki write failed: {_ex}", file=_sys.stderr, flush=True)
+            # --- end wiki_writer integration ---
+
         all_student_notes = get_notes_for_student(student_name)
         aggregate = assess_student_history(student_name, all_student_notes)
         _set_stage(
