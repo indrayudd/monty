@@ -18,6 +18,12 @@ from intelligence.api.services.ghost_client import (
     get_student_literature,
     get_student_profile,
     get_student_snapshots,
+    list_behavioral_nodes,
+    list_behavioral_edges,
+    list_student_incidents,
+    list_curiosity_events,
+    get_runtime_overrides,
+    set_runtime_overrides,
 )
 from intelligence.api.services.kg_agent import query_knowledge_graph
 from intelligence.api.services.self_improve import run_agent_cycle
@@ -190,3 +196,185 @@ def demo_stop():
 @app.get("/api/demo/overview")
 def demo_overview():
     return get_demo_overview()
+
+
+# ── Phase 0: empty/index-backed endpoints. Real behavior wired in Phases 1-3. ──
+
+@app.get("/api/behavioral-graph")
+def behavioral_graph(min_support: int = 1):
+    nodes = list_behavioral_nodes()
+    edges = list_behavioral_edges(min_support=min_support)
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/api/student-graph/{student_name}")
+def student_graph(student_name: str, limit: int = 50):
+    incidents = list_student_incidents(student_name, limit=limit)
+    return {"student_name": student_name, "incidents": incidents}
+
+
+@app.get("/api/student-graph/{student_name}/research")
+def student_graph_research(student_name: str):
+    # Phase 0: returns existing literature rows. Phase 3 enriches via wiki sources/openalex/.
+    return {"student_name": student_name, "papers": get_student_literature(student_name)}
+
+
+@app.get("/api/personas")
+def personas():
+    from notes_streamer.persona_engine import list_personas
+    try:
+        return {"personas": list_personas(), "overrides": get_runtime_overrides()}
+    except NotImplementedError:
+        return {"personas": [], "overrides": get_runtime_overrides(), "stub": True}
+
+
+class PersonaUpdate(BaseModel):
+    slider: float | None = None
+    flavor_override: str | None = None
+    activity_weight: float | None = None
+
+
+@app.patch("/api/personas/{student_name}")
+def update_persona(student_name: str, payload: PersonaUpdate):
+    overrides = get_runtime_overrides()
+    student_block = overrides.get(student_name, {})
+    if payload.slider is not None:
+        student_block["slider"] = payload.slider
+    if payload.flavor_override is not None:
+        student_block["flavor_override"] = payload.flavor_override
+    if payload.activity_weight is not None:
+        student_block["activity_weight"] = payload.activity_weight
+    overrides[student_name] = student_block
+    set_runtime_overrides(overrides)
+    return {"student_name": student_name, "overrides": student_block}
+
+
+class InjectRequest(BaseModel):
+    flavor: str  # "neutral" | "problematic" | "emergency" | "surprise"
+
+
+@app.post("/api/personas/{student_name}/inject")
+def inject_persona(student_name: str, payload: InjectRequest):
+    overrides = get_runtime_overrides()
+    block = overrides.get(student_name, {})
+    block["inject_next"] = payload.flavor
+    overrides[student_name] = block
+    set_runtime_overrides(overrides)
+    return {"student_name": student_name, "inject_next": payload.flavor}
+
+
+class InteractRequest(BaseModel):
+    a: str
+    b: str
+    scene_hint: str | None = None
+
+
+@app.post("/api/personas/interact")
+def interact_personas(payload: InteractRequest):
+    overrides = get_runtime_overrides()
+    for name in (payload.a, payload.b):
+        block = overrides.get(name, {})
+        block["interact_with"] = payload.b if name == payload.a else payload.a
+        if payload.scene_hint:
+            block["interact_scene_hint"] = payload.scene_hint
+        overrides[name] = block
+    set_runtime_overrides(overrides)
+    return {"a": payload.a, "b": payload.b}
+
+
+class NextNoteRequest(BaseModel):
+    student_name: str
+
+
+@app.post("/api/persona/next-note")
+def persona_next_note(payload: NextNoteRequest):
+    from notes_streamer.persona_engine import generate_next_note, PersonaOverrides
+    overrides = get_runtime_overrides().get(payload.student_name, {})
+    po = PersonaOverrides(**{k: v for k, v in overrides.items() if k in PersonaOverrides.__dataclass_fields__})
+    try:
+        note = generate_next_note(payload.student_name, overrides=po)
+        return note
+    except NotImplementedError:
+        raise HTTPException(503, "persona_engine not yet implemented (Phase 1)")
+
+
+@app.get("/api/curiosity/events")
+def curiosity_events_endpoint(limit: int = 50):
+    return {"events": list_curiosity_events(limit=limit)}
+
+
+class CuriosityWeightUpdate(BaseModel):
+    novelty: float | None = None
+    recurrence_gap: float | None = None
+    cross_student: float | None = None
+    surprise: float | None = None
+    severity_weight: float | None = None
+    recency: float | None = None
+
+
+@app.patch("/api/runtime/curiosity-weights")
+def update_curiosity_weights(payload: CuriosityWeightUpdate):
+    overrides = get_runtime_overrides()
+    weights = overrides.get("_curiosity_weights", {})
+    for k, v in payload.dict(exclude_none=True).items():
+        weights[k] = v
+    overrides["_curiosity_weights"] = weights
+    set_runtime_overrides(overrides)
+    return {"curiosity_weights": weights}
+
+
+@app.post("/api/curiosity/recompute/{slug}")
+def curiosity_recompute(slug: str):
+    from intelligence.api.services.curiosity import compute_factors
+    try:
+        factors = compute_factors(slug)
+        return {"slug": slug, "factors": factors.to_dict(), "score": factors.score()}
+    except NotImplementedError:
+        raise HTTPException(503, "curiosity.compute_factors not yet implemented (Phase 3)")
+
+
+@app.post("/api/curiosity/investigate/{slug}")
+def curiosity_investigate(slug: str):
+    try:
+        from intelligence.api.services.curiosity import evaluate_gate
+        result = evaluate_gate(slug)
+        return result
+    except NotImplementedError:
+        raise HTTPException(503, "curiosity.evaluate_gate not yet implemented (Phase 3)")
+
+
+@app.get("/api/wiki/tree")
+def wiki_tree():
+    from intelligence.api.services.wiki_paths import WIKI_ROOT
+    tree: list[dict] = []
+    for path in sorted(WIKI_ROOT.rglob("*.md")):
+        rel = path.relative_to(WIKI_ROOT).as_posix()
+        tree.append({"path": rel, "mtime": path.stat().st_mtime})
+    return {"root": str(WIKI_ROOT), "files": tree}
+
+
+@app.get("/api/wiki/page")
+def wiki_page(path: str):
+    from intelligence.api.services.wiki_paths import WIKI_ROOT
+    target = (WIKI_ROOT / path).resolve()
+    if not str(target).startswith(str(WIKI_ROOT.resolve())):
+        raise HTTPException(400, "path traversal blocked")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, f"no such wiki page: {path}")
+    raw = target.read_text(encoding="utf-8")
+    # Frontmatter parsing — Phase 2 will add backlinks computation. Phase 0 returns raw.
+    try:
+        import frontmatter
+        post = frontmatter.loads(raw)
+        return {"path": path, "frontmatter": post.metadata, "body": post.content, "raw": raw}
+    except Exception:
+        return {"path": path, "frontmatter": {}, "body": raw, "raw": raw}
+
+
+@app.post("/api/wiki/reindex")
+def wiki_reindex():
+    try:
+        from intelligence.api.services.wiki_indexer import full_rebuild
+        return full_rebuild()
+    except NotImplementedError:
+        raise HTTPException(503, "wiki_indexer.full_rebuild not yet implemented (Phase 2)")

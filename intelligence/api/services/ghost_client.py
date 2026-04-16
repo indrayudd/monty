@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg2
+import psycopg2.extras
 from psycopg2.extras import RealDictCursor
 
 
@@ -866,3 +867,84 @@ def reset_agent_state() -> None:
             """
         )
         conn.commit()
+
+
+def list_behavioral_nodes() -> list[dict]:
+    """Return all rows from behavioral_nodes index. Empty list if none."""
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT slug, type, title, summary, support_count, students_count, "
+                "literature_refs, curiosity_score, curiosity_factors, "
+                "last_observed_at, last_research_fetched_at, created_at, file_path "
+                "FROM behavioral_nodes ORDER BY support_count DESC"
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def list_behavioral_edges(min_support: int = 1) -> list[dict]:
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT src_slug, rel, dst_slug, support_count, students_count, "
+                "first_observed_at, last_observed_at "
+                "FROM behavioral_edges WHERE support_count >= %s",
+                (min_support,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def list_student_incidents(student_name: str, limit: int = 50) -> list[dict]:
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, student_name, note_id, severity, ingested_at, file_path, "
+                "behavioral_ref_slugs "
+                "FROM student_incidents WHERE student_name = %s "
+                "ORDER BY ingested_at DESC LIMIT %s",
+                (student_name, limit),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def list_curiosity_events(limit: int = 50) -> list[dict]:
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, node_slug, fired_at, curiosity_score, factors, "
+                "triggered_research, paper_count "
+                "FROM curiosity_events ORDER BY fired_at DESC LIMIT %s",
+                (limit,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_runtime_overrides() -> dict:
+    """Return agent_runtime_state.god_mode_overrides as a dict (empty if null)."""
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT god_mode_overrides FROM agent_runtime_state "
+                "WHERE key = '_god_mode' LIMIT 1"
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}
+            val = row["god_mode_overrides"] if isinstance(row, dict) else row[0]
+            return val if val else {}
+
+
+def set_runtime_overrides(overrides: dict) -> None:
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO agent_runtime_state (key, god_mode_overrides)
+                VALUES ('_god_mode', %s)
+                ON CONFLICT (key) DO UPDATE SET
+                    god_mode_overrides = EXCLUDED.god_mode_overrides,
+                    updated_at = NOW()
+                """,
+                (psycopg2.extras.Json(overrides),),
+            )
+            conn.commit()
