@@ -211,6 +211,12 @@ def ensure_agent_tables() -> None:
                 behavioral_ref_slugs TEXT[]
             );
 
+            CREATE INDEX IF NOT EXISTS idx_student_incidents_student_name
+                ON student_incidents (student_name);
+
+            CREATE INDEX IF NOT EXISTS idx_student_incidents_bref_slugs
+                ON student_incidents USING GIN (behavioral_ref_slugs);
+
             CREATE TABLE IF NOT EXISTS student_profiles_index (
                 student_name TEXT PRIMARY KEY,
                 current_severity TEXT,
