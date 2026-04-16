@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import frontmatter
 from intelligence.api.services.wiki_paths import WIKI_ROOT
@@ -44,7 +45,6 @@ from openai import OpenAI
 
 from intelligence.api.services.ghost_client import (
     list_student_incidents,
-    get_student_profile,
 )
 
 
@@ -68,7 +68,6 @@ def _recent_own_incidents(student_name: str, limit: int = 3) -> list[str]:
     out: list[str] = []
     for inc in incidents:
         try:
-            from pathlib import Path
             text = Path(inc["file_path"]).read_text(encoding="utf-8")
             # Just include the body markdown, not the YAML frontmatter
             if "---" in text:
