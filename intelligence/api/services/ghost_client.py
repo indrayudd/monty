@@ -170,6 +170,69 @@ def ensure_agent_tables() -> None:
                 value_text TEXT,
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+
+            CREATE TABLE IF NOT EXISTS behavioral_nodes (
+                slug TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                support_count INT DEFAULT 0,
+                students_count INT DEFAULT 0,
+                literature_refs INT DEFAULT 0,
+                curiosity_score REAL DEFAULT 0,
+                curiosity_factors JSONB,
+                last_observed_at TIMESTAMPTZ,
+                last_research_fetched_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                file_path TEXT NOT NULL,
+                file_mtime TIMESTAMPTZ NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS behavioral_edges (
+                src_slug TEXT NOT NULL,
+                rel TEXT NOT NULL,
+                dst_slug TEXT NOT NULL,
+                support_count INT DEFAULT 0,
+                students_count INT DEFAULT 0,
+                first_observed_at TIMESTAMPTZ,
+                last_observed_at TIMESTAMPTZ,
+                file_path TEXT NOT NULL,
+                PRIMARY KEY (src_slug, rel, dst_slug)
+            );
+
+            CREATE TABLE IF NOT EXISTS student_incidents (
+                id BIGSERIAL PRIMARY KEY,
+                student_name TEXT NOT NULL,
+                note_id INT,
+                severity TEXT,
+                ingested_at TIMESTAMPTZ DEFAULT NOW(),
+                file_path TEXT NOT NULL,
+                file_mtime TIMESTAMPTZ NOT NULL,
+                behavioral_ref_slugs TEXT[]
+            );
+
+            CREATE TABLE IF NOT EXISTS student_profiles_index (
+                student_name TEXT PRIMARY KEY,
+                current_severity TEXT,
+                trend TEXT,
+                incident_count INT DEFAULT 0,
+                patterns_summary TEXT,
+                file_path TEXT NOT NULL,
+                file_mtime TIMESTAMPTZ NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS curiosity_events (
+                id BIGSERIAL PRIMARY KEY,
+                node_slug TEXT NOT NULL,
+                fired_at TIMESTAMPTZ DEFAULT NOW(),
+                curiosity_score REAL,
+                factors JSONB,
+                triggered_research BOOLEAN,
+                paper_count INT DEFAULT 0
+            );
+
+            ALTER TABLE agent_runtime_state
+                ADD COLUMN IF NOT EXISTS god_mode_overrides JSONB DEFAULT '{}'::jsonb;
             """
         )
         conn.commit()
