@@ -32,7 +32,12 @@ Return ONLY valid JSON with these exact keys:
   "profile_summary": "1-2 sentence assessment of the child's behavior in THIS observation",
   "behavioral_patterns": "key behaviors observed in this note, comma-separated",
   "severity": "green OR yellow OR red",
-  "suggestions": "1-2 actionable recommendations for educators based on this observation"
+  "suggestions": "1-2 actionable recommendations for educators based on this observation",
+  "behavioral_nodes": [...],
+  "behavioral_edges": [...],
+  "peers_present": [...],
+  "educator": "...",
+  "slug_hint": "2-4 word description of this incident"
 }
 
 Severity guide for a SINGLE observation:
@@ -40,7 +45,21 @@ Severity guide for a SINGLE observation:
 - YELLOW: Some difficulty observed — mild frustration, needed a reminder about voice/space/transitions, brief dysregulation that resolved with minimal support. The behavior is worth monitoring but not alarming.
 - RED: Significant concern — repeated disruption, sustained dysregulation, peer conflict requiring intervention, escalation that affected the classroom, or persistent difficulty that required extended adult support.
 
-If the note contains violent threats, weapon language, self-harm language, or imminent danger, mark severity RED."""
+If the note contains violent threats, weapon language, self-harm language, or imminent danger, mark severity RED.
+
+After your assessment, decompose this observation into a behavioral knowledge graph using the ABC + SEAT + BrainState taxonomy. Return a `behavioral_nodes` array and a `behavioral_edges` array in the JSON.
+
+Allowed node types (use these exact strings): "setting_events", "antecedents", "behaviors", "functions", "brain_states", "responses", "protective_factors".
+
+Allowed edge relations (use these exact strings): "predisposes", "amplifies", "triggers", "serves", "occurs_in", "gates", "follows", "reinforces", "extinguishes", "co-regulates", "evidences", "undermines", "recurs_with".
+
+For each node, return: {"type": <node_type>, "slug": <kebab-case>, "title": <short title>, "summary": <one-sentence anonymized definition>, "evidence": <one anonymized sentence about THIS observation, no names, no dates, no times, no ages above "3-4" / "4-5" bands>}.
+
+For each edge, return: {"src_type": ..., "src_slug": ..., "rel": ..., "dst_type": ..., "dst_slug": ..., "evidence": <anonymized one-liner>}.
+
+CRITICAL: evidence strings MUST NOT contain student names, educator names, peer names, dates, or specific times. Phrasing like "a 3-4 year old", "a peer", "the guide" is required. The behavioral graph is anonymized; violations will be rejected by an automated lint.
+
+peers_present should be the actual names of peers mentioned in the note (these are stored in the incident file, not in the anonymized behavioral graph). educator should be the educator name if present in the note. slug_hint should be 2-4 words describing this incident in kebab-friendly phrasing."""
 
 
 HISTORY_PROMPT = """You are an expert Montessori child behavioral analyst. You are given a student's FULL recent note history, not a single observation. Re-assess the student using the accumulated evidence.
