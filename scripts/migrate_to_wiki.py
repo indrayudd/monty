@@ -7,7 +7,8 @@ Usage:
     python3 -m scripts.migrate_to_wiki --dry-run
     python3 -m scripts.migrate_to_wiki
 
---drop-legacy is deferred to Phase 5b (after Phase 3 curiosity gate lands).
+    # After migration completes, drop legacy tables (requires explicit confirmation):
+    python3 -m scripts.migrate_to_wiki --drop-legacy
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from datetime import datetime, timezone
 import frontmatter
 
 from intelligence.api.services.ghost_client import (
+    _agent_db_url,
     get_all_profiles,
     get_student_snapshots,
     get_student_literature,
@@ -133,6 +135,40 @@ def migrate_literature(dry_run: bool) -> int:
     return n
 
 
+def drop_legacy() -> int:
+    """Drop legacy knowledge_graph and student_personality_graph tables.
+
+    Requires the user to type DROP at the confirmation prompt. Returns 0 on
+    success, 1 on cancellation or error.
+    """
+    print("WARNING: This will DROP knowledge_graph CASCADE and student_personality_graph CASCADE.")
+    print("This is irreversible. Only proceed after migrate_to_wiki has populated wiki/ from these tables.")
+    try:
+        confirm = input("Type DROP to confirm: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.", file=sys.stderr)
+        return 1
+    if confirm != "DROP":
+        print("Confirmation did not match. Aborting.", file=sys.stderr)
+        return 1
+
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    url = _agent_db_url()
+    try:
+        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS knowledge_graph CASCADE")
+            cur.execute("DROP TABLE IF EXISTS student_personality_graph CASCADE")
+        conn.close()
+        print("dropped: knowledge_graph, student_personality_graph")
+        return 0
+    except Exception as exc:
+        print(f"Drop failed: {exc}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Migrate legacy DB rows to wiki/ markdown (one-shot, idempotent)."
@@ -150,9 +186,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.drop_legacy:
-        raise NotImplementedError(
-            "--drop-legacy deferred to Phase 5b (after Phase 3 curiosity gate merges)"
-        )
+        return drop_legacy()
 
     mode = "(dry run)" if args.dry_run else "(WRITING)"
     print(f"=== migrate_to_wiki {mode} ===")
