@@ -5,3 +5,4 @@ notes_streamer/.ghost-build.json
 .env
 node_modules/
 .next/
+.worktrees/
