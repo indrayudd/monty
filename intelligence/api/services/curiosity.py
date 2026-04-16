@@ -14,7 +14,6 @@ import frontmatter
 import psycopg2.extras
 
 from intelligence.api.services.ghost_client import (
-    _agent_db_url,  # noqa: F401 — used via _conn
     get_runtime_overrides,
 )
 from intelligence.api.services.wiki_paths import BEHAVIORAL_TYPES, WIKI_ROOT
