@@ -60,9 +60,10 @@ function NodeView({
       <div>
         <button
           onClick={() => setOpen((o) => !o)}
-          className="text-left text-xs text-white/70 hover:text-white w-full font-mono"
+          className="text-left w-full font-mono"
+          style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)" }}
         >
-          {open ? "▾" : "▸"} {node.name}/
+          {open ? "▾" : "▸"} {node.name}
         </button>
         {open && (
           <div className="pl-3">
@@ -145,7 +146,8 @@ export function WikiFileTree({
   const tree = useMemo(() => buildTree(nested), [nested]);
 
   return (
-    <aside className="w-[280px] shrink-0 border-r border-white/10 bg-zinc-950 overflow-y-auto">
+    <aside className="w-[300px] shrink-0 border-r border-white/10 bg-zinc-950 overflow-y-auto">
+      <div className="px-2 pt-2 pb-1" style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)" }}>FILES</div>
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
