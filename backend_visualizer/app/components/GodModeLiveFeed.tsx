@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 
 type FeedLine = {
   ts: string;
-  kind: "stage" | "note";
+  kind: "stage" | "note" | "research";
   text: string;
   detail?: string;
 };
@@ -17,15 +17,22 @@ export function GodModeLiveFeed() {
   const [lines, setLines] = useState<FeedLine[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastNoteIdRef = useRef<number>(0);
+  const lastResearchCheckRef = useRef<string>("");
 
   useEffect(() => {
     const tick = async () => {
       try {
-        const [overview, notesRes] = await Promise.all([
+        const [overview, notesRes, researchRes] = await Promise.all([
           api.demoOverview() as Promise<{
             runtime?: { current_stage?: string; current_student?: string };
           }>,
           api.recentNotes(3),
+          fetch(
+            `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/runtime/research-edges`,
+            { cache: "no-store" },
+          )
+            .then((r) => r.json() as Promise<{ checks: { slug_a: string; slug_b: string; checked_at: string; found_connection: boolean }[] }>)
+            .catch(() => ({ checks: [] })),
         ]);
 
         const ts = formatTs(new Date());
@@ -53,6 +60,29 @@ export function GodModeLiveFeed() {
               text: `note #${n.id} → ${n.name}`,
               detail: preview + (preview.length >= 80 ? "…" : ""),
             });
+          }
+        }
+
+        // Research edge discoveries (only show new ones)
+        const checks = researchRes?.checks || [];
+        if (checks.length > 0) {
+          const latestKey = `${checks[0].slug_a}|${checks[0].slug_b}|${checks[0].checked_at}`;
+          if (latestKey !== lastResearchCheckRef.current) {
+            lastResearchCheckRef.current = latestKey;
+            for (const c of checks.slice(0, 2)) {
+              // Only show checks we haven't seen (compare by checked_at recency)
+              const found = c.found_connection;
+              newLines.push({
+                ts,
+                kind: "research",
+                text: found
+                  ? `research edge: ${c.slug_a} ↔ ${c.slug_b}`
+                  : `researched (no link): ${c.slug_a} ↔ ${c.slug_b}`,
+                detail: found
+                  ? "paper found — edge created"
+                  : "no supporting literature",
+              });
+            }
           }
         }
 
@@ -102,6 +132,15 @@ export function GodModeLiveFeed() {
                 <span className="text-amber-300/70">{l.text}</span>
                 {l.detail && (
                   <span className="text-white/40"> &gt; {l.detail}</span>
+                )}
+              </>
+            ) : l.kind === "research" ? (
+              <>
+                <span className="text-cyan-400/90">{l.text}</span>
+                {l.detail && (
+                  <div className="ml-[96px] text-[10px] text-cyan-300/40 truncate">
+                    {l.detail}
+                  </div>
                 )}
               </>
             ) : (
