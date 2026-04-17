@@ -62,262 +62,100 @@ No left-nav drawer. No user menu. No authentication surfaces. No notification ce
 
 ---
 
-## 5. Page-by-page specifications (current implementation)
+## 5. Page-by-page specifications (redesign — locked from screens.pen)
 
-> This section describes what is **actually built and verified via Playwright** — not aspirational features. A UI agent redesigning these surfaces should treat this as ground truth for current functionality while improving aesthetics, layout, and interaction design.
+> This section was updated 2026-04-17 from the Pencil design file `screens.pen` (5 frames). It is the canonical spec for the UI redesign. The existing implementation is being rewritten to match these designs.
 
 ### 5.1 `/` — Live (default landing)
 
-The stage. Where the agent loop is observed in motion. Layout is **vertically stacked**, full-viewport, with a slim middle stage-rail strip.
+The operations stage. Layout is a **two-column top zone + full-width bottom zone**.
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│  TOP APP BAR  (route nav · Monty wordmark · status pill)           │
-├────────────────────────────────────────────────────────────────────┤
-│                                                                    │
-│   BEHAVIORAL KG PANEL  (force-directed graph, ~55% height)        │
-│   legend chip top-left · min-support control top-right             │
-│   nodes sized by support_count, colored by type                    │
-│   hover shows label · click highlights + cross-references          │
-│                                                                    │
-├────────────────────────────────────────────────────────────────────┤
-│   STAGE RAIL  (7 checkpoints, ~40px, active stage glows green)    │
-├────────────────────────────────────────────────────────────────────┤
-│   5 persona chips (left)                [Timeline|Graph|Research] │
-│                                                                    │
-│   BOTTOM PANEL (content depends on active tab, ~40% height)       │
-│   Timeline: horizontal scroll of incident cards                    │
-│   Graph: per-student behavioral subgraph (force-directed)          │
-│   Research: list of OpenAlex papers fetched for this student       │
-│                                                                    │
-│                                        ┌─────────────────┐        │
-│                                        │  ⚡ God Mode     │        │
-│                                        └─────────────────┘        │
-└────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  TOP APP BAR                                                          │
+│  MONTY OPS  Live  Wiki  Console  God Mode    14:32:08 UTC  ● Running │
+├────────────────────────────────────────────────┬─────────────────────┤
+│                                                │  CYCLE STAGE        │
+│   BEHAVIORAL KG (force-directed graph)         │  updating_profile   │
+│   legend top-left · min-support top-right      │  > Mira Shah        │
+│   ~540px tall · fill_container width           │                     │
+│                                                │  STUDENT FOCUS      │
+│                                                │  🟡 Mira Shah 3-4   │
+│                                                │                     │
+│                                                │  RESEARCH QUEUE     │
+│                                                │  peer-material-grab │
+│                                                │  transition-delay   │
+│                                                │  (332px fixed)      │
+├────────────────────────────────────────────────┴─────────────────────┤
+│  ● STARTED ›  INGESTING ›  REASSESSING ›  UPDATING ›  ...  COMPLETE│
+│                                                                      │
+│  [M Mira] [A Arjun] [D Diya] [K Kiaan] [S Saanvi]   Timeline Graph │
+│                                                                      │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
+│  │ red │    │ yel │    │ grn │    │ red │    │ yel │               │
+│  │ title   │ │ title   │ │ title   │ │ title   │ │ title   │       │
+│  │ desc    │ │ desc    │ │ desc    │ │ desc    │ │ desc    │       │
+│  │ chips   │ │ chips   │ │ chips   │ │ chips   │ │ chips   │       │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 5.1.A Behavioral KG panel (top, ~55% viewport height)
+#### 5.1.A Top Zone (two-column, ~540px tall)
 
-A force-directed graph (react-force-graph-2d) of the anonymized cross-student behavioral knowledge. Canvas dimensions are measured from the actual container via ResizeObserver and passed explicitly so the graph centers correctly within its panel.
+**Left: Behavioral KG panel** (`fill_container` width, rounded, `surface-container-low`, padding 10).
+- Force-directed graph (react-force-graph-2d) — **preserve existing physics tuning, node identity, structural-diff-only reheating, hover-only labels, ResizeObserver sizing**. Do NOT rewrite the graph internals.
+- Legend chip top-left. Min-support control top-right with `{N}n · {N}e` counter.
 
-**Currently implemented visual encoding:**
-- **Node color** = node type. Seven types each get a distinct color:
-  - `setting_event` = violet (#7c3aed)
-  - `antecedent` = sky (#0ea5e9)
-  - `behavior` = orange (#f97316)
-  - `function` = emerald (#10b981)
-  - `brain_state` = amber (#eab308)
-  - `response` = pink (#ec4899)
-  - `protective_factor` = muted slate (#94a3b8)
-  Legend chip is top-left with color swatches and type names.
-- **Node size** = `log2(1 + support_count) * 4`, minimum 2. Log-scaled so high-frequency nodes are visibly larger.
-- **Node halo** = `curiosity_score`:
-  - `< 0.5`: no halo.
-  - `≥ 0.5`: yellow halo (static, rgba(234,179,8,0.25)).
-  - `≥ 0.7`: red halo, **pulsing** at ~1.5 Hz via `Date.now() % 700` opacity modulation (0.15–0.45) with radius oscillation.
-- **Node labels** = hover-only. On hover, the node's title renders as a small canvas-drawn label (9-12px, 75% opacity). Selected nodes also show their label. No tooltip — the canvas label replaces it.
-- **Edge thickness** = `log2(1 + support_count)`, minimum 0.5. Directional arrows (3px, 85% along edge).
-- **Edge color** = per-relationship-type from a 13-color palette (triggers=sky, serves=emerald, occurs_in=amber, reinforces=green, extinguishes=red, co-regulates=purple, recurs_with=orange, predisposes=violet, amplifies=rose, gates=cyan, follows=slate, evidences=emerald, undermines=red).
-- **Min support control** (top-right): numeric input, default 2. Edges with `support_count < min_support` are hidden. Hover tooltip explains what this does. Counter shows `{nodes}n · {edges}e`.
+**Right: Live Ops Column** (332px fixed, rounded, `surface-container-low`, padding 8). Three stacked sections:
+1. **CYCLE STAGE** — bold stage name + student name (e.g., "updating_profile > Mira Shah") + keyword list. Polled from `/api/agent/status`.
+2. **STUDENT FOCUS** — severity dot + name + age band of the student currently being processed.
+3. **RESEARCH QUEUE** — list of recent research queries with paper titles, curiosity scores, status chips.
 
-**Physics tuning (currently applied):**
-- `warmupTicks=80` — pre-settles positions before first render.
-- `cooldownTicks=60`, `d3AlphaDecay=0.1`, `d3VelocityDecay=0.55`.
-- Charge force: `strength(-45)`, `distanceMax(260)`.
-- Centering forces: `forceX(0).strength(0.06)`, `forceY(0).strength(0.06)` — prevents isolated nodes from drifting.
-- `zoomToFit(400, 40)` fires once on first engine stop, then user's pan/zoom is preserved.
+#### 5.1.B Stage Rail + Bottom Zone
 
-**Interactions:**
-- **Hover node:** canvas-drawn label appears (no HTML tooltip).
-- **Click node:** white selection ring on the node. In the bottom panel (Timeline view), incident cards whose `behavioral_ref_slugs` contain the selected slug get a white border glow and scroll into view.
-- **Click empty space:** clears selection.
-- **Scroll/drag:** standard pan and zoom. User's viewport persists across data-poll updates.
+**Stage Rail:** 7 labeled checkpoints (same behavior as current, preserve the component).
 
-**Empty state:** centered text "Awaiting first note — the agent has not seen any classroom observations yet."
+**Bottom Zone** contains persona chips + view tabs (Timeline | Graph | Research).
 
-**Degraded state:** amber banner "⚠ behavioral-graph unreachable — last render retained."
+**Timeline cards redesigned:**
+- Colored left border (4px) by severity (red/yellow/green).
+- Title (bold white) — short behavior summary.
+- Description (muted 11px) — 2-3 line excerpt.
+- Behavioral type chips at bottom in node-type colors.
 
-#### 5.1.B Stage rail (middle, ~40px tall)
+**Incident Detail Drawer:** now 280px wide (was 720px), absolute overlay. Shows severity + timestamp metadata, observation body, and behavioral node pills in type-specific colors (Setting=cyan, Antecedent=purple, Behavior=orange, Function=pink, Brain=blue, Response=green).
 
-Seven labeled checkpoints in a horizontal strip:
+**Graph view and Research view:** preserve existing — no changes.
 
-`waiting for note → ingesting note → reassessing student → updating profile → enriching knowledge → writing alert → cycle complete`
+#### 5.1.C God Mode (now full-page route: `/god-mode`)
 
-- Active stage: bright green dot + subtle glow + bold text.
-- Completed (earlier) stages: dim green dot.
-- Inactive (later) stages: dim gray dot, muted text.
-- Polls `/api/demo/overview` every 1s.
+No longer a slide-in overlay. It is a **top-level route** accessible from the nav bar ("God Mode" link, gold when active). Two-column layout:
 
-#### 5.1.C Per-student panel (bottom, ~40% viewport height)
+**Left (480px, gold top border):** story presets + 5 persona steering cards with gradient slider + inject buttons + interact dropdown.
 
-Header row contains **persona chips** (left) and **view tabs** (right).
-
-**Persona chips:** 5 buttons, one per child. Each shows: first-initial circle, full name, age band. Active chip has a white border + bg-white/5. Clicking a chip switches the bottom panel's content to that student's data. All 5 students' incidents are **pre-cached** in the parent (polled via `Promise.allSettled` every 2s) so switching is instant.
-
-**View tabs:** `Timeline` | `Graph` | `Research` — three buttons on the right side of the header row. Active tab is bg-white/10.
-
-##### Timeline view (default)
-
-Horizontally scrolling row of **incident cards**, newest on the right. Each card (~224px wide):
-- Relative timestamp ("2m ago").
-- Severity dot (green/yellow/red) in the corner.
-- Note ID ("note #5").
-- Row of type-name chips at the bottom showing which behavioral node *types* this incident touched (e.g., `setting_events`, `antecedents`, `behaviors`). If >6 refs, shows "+N" overflow.
-
-**Click card → Incident Detail Drawer** slides in from the right (~720px wide, full height). Contains:
-- File path header (e.g., `students/Arjun_Nair/incidents/2026-04-17-1752-...md`).
-- Collapsible frontmatter card (key-value: behavioral_refs, educator, ingested_at, note_id, peers_present, severity, student).
-- Rendered markdown body: `## Note` (the original observation text) + `## Interpretation` (the agent's assessment).
-- **Linked behavioral nodes** section: clickable pill buttons for each behavioral ref. Clicking a pill closes the drawer and selects that node in the top panel.
-- Dismiss: Esc key or click backdrop.
-
-**Cross-highlighting:** When a node is selected in the top panel, incident cards in the timeline whose `behavioral_ref_slugs` include that node get a white border glow.
-
-**Empty state:** "No observations yet for {Name} — try God Mode → Inject Note."
-
-##### Graph view
-
-Per-student force-directed subgraph showing only the behavioral nodes **this student** has touched, sized by **this student's touch count** (not the global support_count). Uses the same type-color palette and physics tuning as the top panel.
-
-- Nodes = unique behavioral refs from this student's incidents.
-- Node size = `log2(1 + student_touch_count) * 5`.
-- Edges = co-occurrence of refs within the same incident (two refs that appeared together). Edge width = `log2(1 + co_occurrence_count)`.
-- Node identity persists across polls (no re-layout on each data update).
-- Same hover-only labeling as the top panel.
-- Click a node → sets it as the selected slug, which also highlights it in the top panel.
-- `zoomToFit` fires once on first settle.
-
-**Info card** (top-left): student name, `N incidents · M nodes touched · node size = this student's touch count`.
-
-**Empty state:** "No behavioral nodes touched by {Name} yet. Wait for the agent loop to process incoming notes, or inject a few via God Mode."
-
-##### Research view
-
-Vertical scrolling list of OpenAlex papers the curiosity gate has fetched for this student. Each paper card:
-- Title (bold, white).
-- Year + cited_by_count (right-aligned, muted).
-- Authors (italic, muted).
-- Relevance summary (if present).
-- "open ↗" link to the paper's `landing_page_url` (opens in new tab).
-
-Data from `GET /api/student-graph/{name}/research`. Polled every 3s.
-
-**Empty state:** "No research fetched for {Name} yet. The curiosity gate fires when behavioral nodes accumulate enough support_count + students_count to cross threshold 0.70. You can also force it via God Mode → Manual research trigger."
-
-#### 5.1.D God Mode slide-in panel (overlay)
-
-**Trigger:** floating pill button bottom-right of `/`: SVG lightning bolt icon + "God Mode" text, bg-rose-600, rounded-full, shadow-lg.
-
-**Panel:** slides in from right (~420px wide), full height, bg-zinc-950/95 backdrop-blur, border-l border-white/20. Backdrop dims at ~30% opacity. Dismiss: Esc or click backdrop.
-
-**Layout (top to bottom):**
-
-**1. Header:** SVG bolt icon (rose-400) + "God Mode" text (font-mono), "esc" dismiss button on right.
-
-**2. Story preset row** — 5 pill buttons wrapping:
-`Calm Morning` · `Escalating Mira` · `Group Conflict` · `Emergency Cascade` · `Reset to Baseline`
-
-Each preset sets all 5 personas' sliders + activity_weights to coordinated values via parallel `PATCH /api/personas/{name}` calls.
-
-**3. Per-persona steering cards** — 5 cards stacked, each bordered `border-white/10 rounded-lg`:
-- **Header:** name (bold), age band, dysfunction flavor (muted, right-aligned).
-- **Slider:** "Functional ↔ Dysfunctional (0.0)" label + range input (`-1.0` to `+1.0`, step 0.1). Track has a green-to-red gradient via `accent-rose-400`.
-- **Controls row:** flavor dropdown (5 options: impulsive, clingy-then-shutdown, scattered, explosive-then-shutdown, shutdown) + activity weight numeric input (0 to 3, step 0.1).
-- **Inject row:** 4 small buttons — `Neutral` · `Problematic` · `Emergency` · `Surprise`. One-shot directive for the next generation only.
-- **Interact row:** "interact:" label + dropdown listing the other 4 personas. Selecting one conditions both students' next notes on a shared scene.
-
-**4. Curiosity Tuning** (collapsed by default, disclosure toggle):
-- 6 range sliders (0–0.50, step 0.01): `novelty`, `recurrence_gap`, `cross_student`, `surprise`, `severity_weight`, `recency`.
-- Each shows current value. Changes via `PATCH /api/runtime/curiosity-weights`.
-
-**5. Manual research trigger:**
-- Text input (placeholder "behavioral node slug") + "Investigate" button (bg-rose-600).
-- Fires `POST /api/curiosity/investigate/{slug}`. Shows result inline: `fire=true/false score=0.XX reason=...`.
-
-**6. Demo lifecycle row:** 3 buttons: `Start` (emerald) · `Reset` (amber) · `Stop` (rose).
-
-**7. Reindex button:** "Reindex wiki (full rebuild)" — calls `POST /api/wiki/reindex`, alerts the result.
-
-**8. Purge button:** "Purge everything (fresh start)" — dark red styling (bg-rose-950, text-rose-300, border-rose-700/50). Shows `window.confirm` gate. Calls `POST /api/admin/purge` which truncates all 12 DB tables + wipes wiki/behavioral, wiki/students/*/incidents, wiki/sources/openalex generated content. Preserves wiki/personas + skeleton. Page reloads on success.
-
-State persists in `agent_runtime_state.god_mode_overrides`. Survives page reloads.
+**Right (fill):** live event feed (scrollable monospace log), curiosity weight sliders, manual research trigger with quick-action pills, demo lifecycle buttons (Start/Reset/Stop).
 
 ---
 
-### 5.2 `/wiki` — Wiki Browser
+### 5.2 `/wiki` — Wiki Browser (redesigned)
 
-Three-pane Obsidian-style reader for the markdown wiki at `wiki/`.
-
-```
-┌──────────────┬─────────────────────────────────────┬────────────────┐
-│              │                                     │                │
-│  FILE TREE   │   RENDERED MARKDOWN                 │  BACKLINKS     │
-│  (~240px)    │   (flexible, scrollable)            │  (~280px)      │
-│              │                                     │                │
-│  [filter…]   │   path breadcrumb     [raw] toggle  │  Linked from:  │
-│  index.md    │   ▼ frontmatter (collapsible JSON)  │   page1.md     │
-│  log.md      │   # Page Title                      │   page2.md     │
-│  schema.md   │   body markdown…                    │                │
-│  ▸ behavioral│   [[wikilinks]] are clickable       │                │
-│  ▸ personas  │                                     │                │
-│  ▸ students  │                                     │                │
-└──────────────┴─────────────────────────────────────┴────────────────┘
-```
-
-**Left pane — File tree:**
-- Mirrors `wiki/` directory structure. Folders have disclosure triangles (▸ / ▾).
-- Files modified in the last 30s **pulse green** (CSS `animate-pulse` + bg-emerald-500/20). Files modified in last 5 minutes get a faint emerald highlight.
-- Filter textbox at top narrows the tree by filename match.
-- Top-level files (`index.md`, `log.md`, `schema.md`) pinned above folders.
-- Clicking a file loads it in the middle pane. Active file gets white text + bg-white/10.
-
-**Middle pane — Rendered markdown:**
-- Path breadcrumb at top (e.g., `behavioral/functions/desire-for-accuracy.md`).
-- "raw" toggle button (top-right) switches between rendered markdown and raw source.
-- Frontmatter rendered as a collapsible `<details open>` JSON card (monospace, bg-black/30).
-- Body rendered via `react-markdown` + `remark-gfm`. Standard headings, lists, blockquotes.
-- **Wikilinks** (markdown links ending in `.md` or relative paths) are clickable and navigate within the pane. Links are resolved relative to the current page's directory (e.g., from `students/Arjun_Nair/timeline.md`, clicking `incidents/foo.md` resolves to `students/Arjun_Nair/incidents/foo.md`).
-- All internal links render as `text-sky-400 underline`.
-- For behavioral node pages: body shows `## Summary` (one-line definition) + `## Evidence` (anonymized bullet list of observations).
-
-**Right pane — Backlinks:**
-- "Linked from" header, followed by a list of wiki page paths that reference the current page (computed by scanning all wiki files for the current path string).
-
-**Page types you'll see:**
-
-| Page | Location | Content |
-|---|---|---|
-| Wiki Index | `index.md` | Auto-generated catalog: Setting Events, Antecedents, Behaviors, Functions, Brain States, Responses, Protective Factors, Students, Personas, Research Sources. Each item is a clickable link. |
-| Agent Log | `log.md` | Append-only chronological entries: `## [YYYY-MM-DD HH:MM] action \| subject` |
-| Schema | `schema.md` | LLM instruction sheet: three-layer architecture, anonymization wall rules, frontmatter conventions, update protocol |
-| Behavioral node | `behavioral/<type>/<slug>.md` | Frontmatter (type, slug, support_count, students_count, curiosity_score, _student_hashes, etc.) + Summary + Evidence bullets |
-| Behavioral edge | `behavioral/_edges/<src>--<rel>--<dst>.md` | Frontmatter (src_slug, rel, dst_slug, support_count, students_count) + Evidence bullets |
-| Student incident | `students/<Name>/incidents/<ts>-<slug>.md` | Frontmatter (student, note_id, severity, behavioral_refs, peers_present, educator) + Note (verbatim observation) + Interpretation |
-| Student profile | `students/<Name>/profile.md` | Current severity, trend, latest summary, patterns, suggestions |
-| Student timeline | `students/<Name>/timeline.md` | Chronological list of incident links with severity |
-| Student patterns | `students/<Name>/patterns.md` | Behavioral refs ranked by frequency |
-| Persona | `personas/<Name>.md` | Frontmatter (name, age_band, temperament_axes, dysfunction_flavor, recurring_companions) + narrative prose |
+Same three-pane structure but with: search bar in top nav, "FILES" header in left pane (300px), "GRAPH LINKS" header in right pane (320px) with backlinks + outgoing + legend sections, anonymization wall callout card on student pages, writing-activity cue, bottom route bar with action buttons.
 
 ---
 
-### 5.3 `/console` — Console
+### 5.3 `/console` — Console (redesigned)
 
-Diagnostic surface. Two vertically stacked sections.
+- **3 KPI status cards** at top (cycle state, graph state, throughput) with colored left borders.
+- **Structured trace log** with color-coded rows by category and filter chips.
+- **Curiosity + Research Stream** section.
+- **Bottom bar** with route nav + filter + PAUSE STREAM button.
 
-**Section 1 — Agent Status** (bordered card, monospace):
-Raw JSON dump of `agent_runtime_state` row: current_note_id, current_stage, current_student, last_cycle_at, last_processed_note_id, stage_message, started, mode, etc. Polled every 1.5s.
-
-**Section 2 — Curiosity Events** (bordered card, monospace):
-Header: "Curiosity events" with count badge ("N loaded").
-Each row: timestamp | fire/skip indicator (green/gray) | node slug | curiosity score | 6 factor mini-bars (inline `<span>` elements, height proportional to factor value, titled with `factor_name: value`).
-
-Data from `GET /api/curiosity/events?limit=50`. Polled every 1.5s.
-
-**Empty state:** "(no curiosity evaluations yet — the agent will start emitting these once nodes begin attracting attention)"
-
-**No God Mode trigger on this route** — Console is read-only diagnostic.
+See `screens.pen` frame `kTEh7` for exact layout.
 
 ---
+
+_Old § 5 subsections removed — see redesign above._
+
 
 ## 6. Visual language
 
