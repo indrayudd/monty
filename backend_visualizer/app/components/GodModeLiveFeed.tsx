@@ -14,7 +14,7 @@ function formatTs(d: Date): string {
 
 export function GodModeLiveFeed() {
   const [lines, setLines] = useState<FeedLine[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const tick = async () => {
@@ -38,9 +38,10 @@ export function GodModeLiveFeed() {
     return () => clearInterval(i);
   }, []);
 
-  // Auto-scroll to bottom when new lines arrive
+  // Auto-scroll the feed container (not the page) to bottom on new lines
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
   return (
@@ -51,7 +52,7 @@ export function GodModeLiveFeed() {
         </span>
         <span className="text-[9px] font-mono text-white/30">{lines.length}/50</span>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 max-h-48" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 max-h-48" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
         {lines.length === 0 && (
           <div className="text-[10px] text-white/30 italic">waiting for agent activity…</div>
         )}
@@ -64,7 +65,6 @@ export function GodModeLiveFeed() {
             )}
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
