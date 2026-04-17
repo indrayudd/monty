@@ -168,8 +168,9 @@ export function BehavioralKGPanel({
         source: e.src_slug.split("/").pop()!,
         target: e.dst_slug.split("/").pop()!,
         width: Math.max(0.5, Math.log2(1 + e.support_count)),
-        color: REL_COLORS[e.rel] || "#52525b",
+        color: e.source === "research" ? "rgba(255,255,255,0.12)" : (REL_COLORS[e.rel] || "#52525b"),
         rel: e.rel,
+        edgeSource: e.source,
       })),
     };
   }, [nodes, edges]);
@@ -256,6 +257,7 @@ export function BehavioralKGPanel({
         }}
         linkWidth={(l: unknown) => (l as { width: number }).width}
         linkColor={(l: unknown) => (l as { color: string }).color}
+        linkLineDash={(l: unknown) => (l as { edgeSource?: string }).edgeSource === "research" ? [4, 2] : null}
         linkDirectionalArrowLength={3}
         linkDirectionalArrowRelPos={0.85}
         nodeCanvasObject={(

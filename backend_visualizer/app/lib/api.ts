@@ -49,6 +49,7 @@ export type BehavioralEdge = {
   students_count: number;
   first_observed_at: string;
   last_observed_at: string;
+  source?: string;
 };
 export type StudentIncident = {
   id: number;
