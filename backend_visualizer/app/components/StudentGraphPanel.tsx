@@ -169,6 +169,7 @@ export function StudentGraphPanel({
         ref={fgRef as unknown as React.Ref<unknown>}
         graphData={data}
         nodeRelSize={4}
+        nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"
         cooldownTicks={60}
         d3AlphaDecay={0.1}
@@ -209,10 +210,10 @@ export function StudentGraphPanel({
           ctx.fill();
           // Label only on hover or selected — no zoom-based label spam.
           if (n.id === hoveredId || isHighlighted) {
-            const fontSize = Math.max(11, 14 / globalScale * 3);
-            ctx.fillStyle = "rgba(255,255,255,0.95)";
+            const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
+            ctx.fillStyle = "rgba(255,255,255,0.75)";
             ctx.font = `${fontSize}px sans-serif`;
-            ctx.fillText(n.name, n.x + r + 3, n.y + 4);
+            ctx.fillText(n.name, n.x + r + 2, n.y + 3);
           }
         }}
         onNodeHover={(node: unknown) => {
