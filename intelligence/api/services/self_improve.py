@@ -7,7 +7,6 @@ import re
 from intelligence.api.services.ghost_client import (
     get_alerts,
     get_all_profiles,
-    get_knowledge_graph_entries,
     get_notes_after,
     get_notes_for_student,
     get_runtime_value,
@@ -227,6 +226,20 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
             # and 'behavioral_edges': list of {src_type, src_slug, rel, dst_type, dst_slug, evidence}.
             # If assess_note doesn't yet return these fields (pre-Task 2.7), these are no-ops.
             from intelligence.api.services import wiki_writer as _ww
+            from intelligence.api.services.anonymization_lint import KNOWN_STUDENT_NAMES
+            import re as _re
+
+            def _scrub_names(text: str) -> str:
+                """Best-effort: replace known student names (full and first-name) with neutral tokens.
+                The anonymization lint is still the final authority — this just helps get past
+                LLM outputs that leaked a name despite the prompt's instructions."""
+                if not text:
+                    return text
+                for full_name in KNOWN_STUDENT_NAMES:
+                    text = text.replace(full_name, "the child")
+                    first = full_name.split()[0]
+                    text = _re.sub(rf"\b{_re.escape(first)}\b", "the child", text)
+                return text
 
             assessment_nodes = snapshot.get("behavioral_nodes") or []
             assessment_edges = snapshot.get("behavioral_edges") or []
@@ -238,8 +251,8 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                         node_type=n["type"],
                         slug=n["slug"],
                         title=n.get("title", n["slug"].replace("-", " ").title()),
-                        summary=n.get("summary", ""),
-                        new_evidence=n["evidence"],
+                        summary=_scrub_names(n.get("summary", "")),
+                        new_evidence=_scrub_names(n["evidence"]),
                         new_student_name=student_name,
                     )
                     ref_paths.append(f"behavioral/{n['type']}/{n['slug']}")
@@ -255,7 +268,7 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                         rel=_e["rel"],
                         dst_type=_e["dst_type"],
                         dst_slug=_e["dst_slug"],
-                        new_evidence=_e["evidence"],
+                        new_evidence=_scrub_names(_e["evidence"]),
                         new_student_name=student_name,
                     )
                 except Exception as _ex:
@@ -320,15 +333,18 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                 )
 
         emergency_terms = detect_emergency_terms(student_new_notes)
-        existing_knowledge = get_knowledge_graph_entries(student_name=student_name, query=aggregate.get("behavioral_patterns"), limit=6)
+        # existing_knowledge previously queried legacy knowledge_graph table (dropped Phase 5b).
+        # Behavioral KG now lives in wiki/behavioral/ + behavioral_nodes index. kg_agent's
+        # enrich_student_knowledge reads it directly; curiosity gate is the primary trigger.
+        existing_knowledge: list[dict] = []
         if verbose:
             print(
                 f"[agent-cycle][knowledge] {student_name}: "
-                f"existing_nodes={len(existing_knowledge)} emergency_terms={emergency_terms}",
+                f"emergency_terms={emergency_terms}",
                 flush=True,
             )
         knowledge_payload = {"results": existing_knowledge, "new_nodes_created": 0, "queries": []}
-        if emergency_terms or len(existing_knowledge) < 2:
+        if emergency_terms:
             _set_stage(
                 "enriching_knowledge",
                 student_name=student_name,
