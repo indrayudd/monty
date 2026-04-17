@@ -296,21 +296,28 @@ export function BehavioralKGPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = n.color;
           ctx.fill();
-          // Label only for hovered or selected node — avoids clutter at zoom.
-          if (n.id === hoveredId || n.id === selectedSlug) {
-            const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
-            ctx.font = `${fontSize}px sans-serif`;
-            const text = n.name;
-            const textW = ctx.measureText(text).width;
-            const tx = n.x + r + 4;
-            const ty = n.y + 3;
-            // Dark pill behind text for legibility against bright nodes
-            ctx.fillStyle = "rgba(0,0,0,0.75)";
-            ctx.beginPath();
-            ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
-            ctx.fill();
-            ctx.fillStyle = "rgba(255,255,255,0.92)";
-            ctx.fillText(text, tx, ty);
+          // Labels are drawn in onRenderFramePost so they're always on top.
+        }}
+        onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
+          // Draw labels AFTER all nodes so they're never occluded.
+          for (const node of data.nodes) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const n = node as any;
+            if (n.id === hoveredId || n.id === selectedSlug) {
+              const r = n.val || 4;
+              const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
+              ctx.font = `${fontSize}px sans-serif`;
+              const text = n.name || n.id;
+              const textW = ctx.measureText(text).width;
+              const tx = n.x + r + 4;
+              const ty = n.y + 3;
+              ctx.fillStyle = "rgba(0,0,0,0.8)";
+              ctx.beginPath();
+              ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
+              ctx.fill();
+              ctx.fillStyle = "rgba(255,255,255,0.95)";
+              ctx.fillText(text, tx, ty);
+            }
           }
         }}
         onNodeHover={(node: unknown) => {

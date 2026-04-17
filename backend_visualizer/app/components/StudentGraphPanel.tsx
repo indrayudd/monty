@@ -258,20 +258,28 @@ export function StudentGraphPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = isHighlighted ? "white" : n.color;
           ctx.fill();
-          // Label only on hover or selected — no zoom-based label spam.
-          if (n.id === hoveredId || isHighlighted) {
-            const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
-            ctx.font = `${fontSize}px sans-serif`;
-            const text = n.name as string;
-            const textW = ctx.measureText(text).width;
-            const tx = n.x + r + 4;
-            const ty = n.y + 3;
-            ctx.fillStyle = "rgba(0,0,0,0.75)";
-            ctx.beginPath();
-            ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
-            ctx.fill();
-            ctx.fillStyle = "rgba(255,255,255,0.92)";
-            ctx.fillText(text, tx, ty);
+          // Labels drawn in onRenderFramePost so they're always on top.
+        }}
+        onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
+          for (const node of data.nodes) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const n = node as any;
+            const isHighlighted = highlightSlug && (n.slug === highlightSlug || n.id?.endsWith?.(highlightSlug));
+            if (n.id === hoveredId || isHighlighted) {
+              const r = n.val || 4;
+              const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
+              ctx.font = `${fontSize}px sans-serif`;
+              const text = (n.name || n.id) as string;
+              const textW = ctx.measureText(text).width;
+              const tx = n.x + r + 4;
+              const ty = n.y + 3;
+              ctx.fillStyle = "rgba(0,0,0,0.8)";
+              ctx.beginPath();
+              ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
+              ctx.fill();
+              ctx.fillStyle = "rgba(255,255,255,0.95)";
+              ctx.fillText(text, tx, ty);
+            }
           }
         }}
         onNodeHover={(node: unknown) => {
