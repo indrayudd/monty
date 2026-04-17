@@ -42,17 +42,8 @@ export default function GodModePage() {
 
   const handleStart = async () => {
     try {
-      await api.demoStart();
+      await api.resumeStreamer();
       setDemoStatus("running");
-    } catch {
-      /* offline */
-    }
-  };
-
-  const handleReset = async () => {
-    try {
-      await api.demoReset();
-      setDemoStatus("idle");
     } catch {
       /* offline */
     }
@@ -60,7 +51,7 @@ export default function GodModePage() {
 
   const handleStop = async () => {
     try {
-      await api.demoStop();
+      await api.pauseStreamer();
       setDemoStatus("stopped");
     } catch {
       /* offline */
@@ -186,12 +177,6 @@ export default function GodModePage() {
               className="flex-1 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-mono transition-colors"
             >
               Start
-            </button>
-            <button
-              onClick={handleReset}
-              className="flex-1 px-3 py-2 rounded bg-amber-600 hover:bg-amber-500 text-xs text-white font-mono transition-colors"
-            >
-              Reset
             </button>
             <button
               onClick={handleStop}

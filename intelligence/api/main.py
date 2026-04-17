@@ -308,6 +308,40 @@ def update_curiosity_weights(payload: CuriosityWeightUpdate):
     return {"curiosity_weights": weights}
 
 
+@app.post("/api/runtime/pause")
+def pause_streamer():
+    overrides = get_runtime_overrides()
+    overrides["_paused"] = True
+    set_runtime_overrides(overrides)
+    return {"paused": True}
+
+
+@app.post("/api/runtime/resume")
+def resume_streamer():
+    overrides = get_runtime_overrides()
+    overrides["_paused"] = False
+    set_runtime_overrides(overrides)
+    return {"paused": False}
+
+
+@app.get("/api/notes/recent")
+def recent_notes(limit: int = 5):
+    """Return the last N ingested observations for the God Mode live feed."""
+    from intelligence.api.services.ghost_client import _conn
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, name, body, inserted_at FROM ingested_observations "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+        return {"notes": rows}
+    finally:
+        conn.close()
+
+
 class NoteCadenceUpdate(BaseModel):
     cadence: float  # seconds between notes (0 = default random 2-8s)
 

@@ -53,7 +53,7 @@ export function IncidentDrawer({
   return (
     <div className="fixed inset-0 z-40">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <aside className="absolute top-0 right-0 h-full w-[280px] max-w-[95vw] bg-zinc-950 border-l border-white/20 overflow-y-auto p-4 text-white/90 shadow-2xl">
+      <aside className="absolute top-0 right-0 h-full w-[480px] max-w-[95vw] bg-zinc-950 border-l border-white/20 overflow-y-auto p-4 text-white/90 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-mono text-xs text-white/60 truncate">
             {incident.file_path}

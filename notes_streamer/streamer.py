@@ -76,6 +76,15 @@ def main() -> int:
     consecutive_errors = 0
     while True:
         try:
+            # Check pause flag from God Mode (Stop = paused, Start = resumed)
+            try:
+                pause_ov = get_runtime_overrides()
+                if pause_ov.get("_paused"):
+                    time.sleep(1)
+                    continue
+            except Exception:
+                pass
+
             stream_one_note()
             consecutive_errors = 0
             # Read cadence from god_mode_overrides (set via God Mode UI).
