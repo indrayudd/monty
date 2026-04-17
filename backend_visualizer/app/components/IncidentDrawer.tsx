@@ -4,6 +4,15 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type StudentIncident, type WikiPage } from "../lib/api";
 
+const TYPE_COLORS: Record<string, string> = {
+  setting: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  antecedent: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  behavior: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  function: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+  brain: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  response: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+};
+
 export function IncidentDrawer({
   incident,
   onClose,
@@ -43,7 +52,7 @@ export function IncidentDrawer({
   return (
     <div className="fixed inset-0 z-40">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <aside className="absolute top-0 right-0 h-full w-[720px] max-w-[95vw] bg-zinc-950 border-l border-white/20 overflow-y-auto p-6 text-white/90 shadow-2xl">
+      <aside className="absolute top-0 right-0 h-full w-[280px] max-w-[95vw] bg-zinc-950 border-l border-white/20 overflow-y-auto p-4 text-white/90 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-mono text-xs text-white/60 truncate">
             {incident.file_path}
@@ -86,6 +95,9 @@ export function IncidentDrawer({
                   page.frontmatter.behavioral_refs as string[] | undefined
                 )?.map((ref) => {
                   const slug = ref.split("/").slice(-1)[0];
+                  const parts = ref.split("/");
+                  const typeKey = parts.length >= 2 ? parts[parts.length - 2] : "";
+                  const colors = TYPE_COLORS[typeKey.toLowerCase()] || "bg-white/5 text-white/80 border-white/10";
                   return (
                     <button
                       key={ref}
@@ -93,9 +105,9 @@ export function IncidentDrawer({
                         onSelectBehavioralNode(slug);
                         onClose();
                       }}
-                      className="text-xs px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 font-mono text-white/80"
+                      className={`text-xs px-2 py-1 rounded border font-mono hover:brightness-125 ${colors}`}
                     >
-                      {ref}
+                      {slug}
                     </button>
                   );
                 })}
