@@ -399,7 +399,70 @@ Each has a hand-authored persona doc at `wiki/personas/<Name>.md` defining tempe
 
 ---
 
-## 10. What NOT to design
+## 10. Screen permutations (every possible view state)
+
+The UI agent must design for every combination of route + tab + overlay. Each row below is a distinct screen state the user can reach.
+
+### `/` Live route
+
+| Bottom tab | Overlay | Description |
+|---|---|---|
+| **Timeline** (default) | none | Behavioral KG top, stage rail middle, horizontal scroll of incident cards bottom. This is the default landing view. |
+| **Timeline** | **Incident Drawer** | Right slide-over (~720px) showing one incident's markdown: frontmatter card + Note + Interpretation + linked behavioral node pills. The live view behind the drawer continues updating. |
+| **Timeline** | **God Mode** | Right slide-in (~420px, dark glass) with story presets, 5 persona steering cards (slider + inject buttons + interact dropdown), curiosity tuning, manual research trigger, demo lifecycle, reindex, purge. The behavioral KG and timeline behind the overlay continue updating (dimmed 30%). |
+| **Graph** | none | Behavioral KG top, stage rail middle, per-student force-directed subgraph bottom (nodes this student touched, sized by student's touch count, edges from co-occurrence). |
+| **Graph** | **God Mode** | Same as above but God Mode overlays the right side. |
+| **Research** | none | Behavioral KG top, stage rail middle, scrollable list of OpenAlex papers fetched for this student bottom. |
+| **Research** | **God Mode** | Same as above but God Mode overlays the right side. |
+
+> Note: Incident Drawer and God Mode cannot both be open simultaneously — opening one closes the other (both use Esc to dismiss). The drawer only opens from Timeline view (clicking an incident card).
+
+**Cross-highlight state:** clicking a behavioral node in the top panel highlights related incident cards in the Timeline view AND corresponding nodes in the student Graph view (if that tab is active). This is a global selection state, not per-tab.
+
+### `/wiki` Wiki Browser route
+
+| Selected page type | Description |
+|---|---|
+| **index.md** (default) | Auto-generated catalog with links grouped by: Setting Events, Antecedents, Behaviors, Functions, Brain States, Responses, Protective Factors, Students, Personas, Research Sources. |
+| **log.md** | Append-only agent activity log. Newest entry at bottom. |
+| **schema.md** | LLM instruction sheet (three layers, anonymization wall, frontmatter conventions, update protocol). |
+| **behavioral node** (e.g., `behavioral/functions/desire-for-accuracy.md`) | Frontmatter card (slug, type, support_count, students_count, curiosity_score, _student_hashes) + `## Summary` + `## Evidence` (anonymized bullet list). Backlinks pane shows which index pages and student incident pages reference this node. |
+| **behavioral edge** (e.g., `behavioral/_edges/antecedents--peer-disruption--triggers--behaviors--outburst.md`) | Frontmatter (src_slug, rel, dst_slug, support_count, students_count) + `## Evidence` bullets. |
+| **student incident** (e.g., `students/Arjun_Nair/incidents/2026-04-17-1752-...md`) | Frontmatter (student, note_id, severity, behavioral_refs list, peers_present, educator, ingested_at) + `## Note` (original observation) + `## Interpretation` (agent's assessment). |
+| **student profile** (`students/<Name>/profile.md`) | Current severity, trend, latest summary, patterns, suggestions. |
+| **student timeline** (`students/<Name>/timeline.md`) | Chronological list of incident links (clickable, navigate within wiki). |
+| **student patterns** (`students/<Name>/patterns.md`) | Behavioral refs ranked by frequency of occurrence for this student. |
+| **student relationships** (`students/<Name>/relationships.md`) | Peers and educators seen in this student's incident frontmatter, ranked by co-occurrence count. |
+| **persona** (`personas/<Name>.md`) | Frontmatter (name, age_band, temperament_axes, dysfunction_flavor, recurring_companions) + narrative prose. |
+| **(no selection)** | Left pane shows file tree, middle pane shows "Select a file from the tree." |
+| **page not found** | When a wikilink target doesn't exist: "⚠ page not found" with backlinks still showing which page referenced it. |
+
+### `/console` Console route
+
+| State | Description |
+|---|---|
+| **Active agent loop** | Agent Status card shows live JSON (current_stage, current_student, last_cycle_at, etc.). Curiosity Events stream shows factor-breakdown bars per event. |
+| **Idle / no data** | Agent Status shows `mode: "idle"`. Curiosity Events shows "(no curiosity evaluations yet — the agent will start emitting these once nodes begin attracting attention)" |
+
+### God Mode flow (how to use it)
+
+1. Click the **God Mode** button (bottom-right of `/`).
+2. Optionally click a **Story Preset** to coordinate all 5 personas at once (e.g., "Emergency Cascade" pushes all sliders high).
+3. For fine control, adjust individual persona cards:
+   - **Slider** (-1.0 to +1.0): shifts the persona's next LLM-generated note between calm/normalized and acutely dysregulated.
+   - **Flavor dropdown**: changes how this persona decompensates (e.g., "explosive-then-shutdown" vs "scattered").
+   - **Activity weight** (0–3): how often the streamer picks this persona. 0 = paused, 2 = double frequency.
+   - **Inject buttons** (Neutral / Problematic / Emergency / Surprise): force the very next note for this persona to match that tone. A colored badge ("next: emergency") appears on the card until the streamer consumes it.
+   - **Interact dropdown**: pick another persona; both students' next notes will be conditioned on a shared scene.
+4. **Curiosity Tuning** (collapsed by default): adjust the 6 weights that determine when the agent gets "curious" enough to fetch research.
+5. **Manual research trigger**: type a behavioral node slug, click Investigate to force a curiosity-gate trip.
+6. **Start / Reset / Stop**: demo lifecycle controls.
+7. **Reindex wiki**: triggers `POST /api/wiki/reindex` to rebuild the Postgres index from markdown files.
+8. **Purge everything**: nuclear reset — truncates all tables, wipes wiki-generated content, preserves personas and skeleton. Requires confirmation. Page reloads.
+
+---
+
+## 11. What NOT to design
 
 The UI agent should **not** design or include any of the following — they are explicitly out of scope:
 
