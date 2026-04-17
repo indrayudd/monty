@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { forceX, forceY } from "d3-force";
 import { api, type StudentIncident, type BehavioralNode } from "../lib/api";
@@ -41,6 +41,24 @@ export function StudentGraphPanel({
   >({});
   const [degraded, setDegraded] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 300 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const measureContainer = useCallback(() => {
+    if (containerRef.current) {
+      const { clientWidth, clientHeight } = containerRef.current;
+      if (clientWidth > 0 && clientHeight > 0) {
+        setDims({ w: clientWidth, h: clientHeight });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    measureContainer();
+    const ro = new ResizeObserver(measureContainer);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [measureContainer]);
 
   // Preserve node identity across polls AND across student switches so the
   // force layout keeps positions for shared nodes. Unreferenced nodes drop
@@ -140,7 +158,7 @@ export function StudentGraphPanel({
   const isEmpty = data.nodes.length === 0;
 
   return (
-    <div className="relative h-full w-full bg-zinc-950 overflow-hidden">
+    <div ref={containerRef} className="relative h-full w-full bg-zinc-950 overflow-hidden">
       <div className="absolute top-2 left-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono border border-white/10 max-w-xs">
         <div className="font-semibold mb-1 text-white">
           {studentName}
@@ -168,6 +186,8 @@ export function StudentGraphPanel({
       <ForceGraph2D
         ref={fgRef as unknown as React.Ref<unknown>}
         graphData={data}
+        width={dims.w}
+        height={dims.h}
         nodeRelSize={4}
         nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"

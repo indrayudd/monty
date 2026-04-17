@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { forceX, forceY } from "d3-force";
 import {
@@ -50,7 +50,26 @@ export function BehavioralKGPanel({
   const [minSupport, setMinSupport] = useState(2);
   const [degraded, setDegraded] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 400 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<unknown>(null);
+
+  // Measure actual container size so ForceGraph doesn't assume window height.
+  const measureContainer = useCallback(() => {
+    if (containerRef.current) {
+      const { clientWidth, clientHeight } = containerRef.current;
+      if (clientWidth > 0 && clientHeight > 0) {
+        setDims({ w: clientWidth, h: clientHeight });
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    measureContainer();
+    const ro = new ResizeObserver(measureContainer);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [measureContainer]);
   // Preserve node object identity across polls so the force layout keeps x/y
   // positions instead of re-initializing every 2s (the "singularity explosion").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,7 +138,7 @@ export function BehavioralKGPanel({
   const isEmpty = nodes.length === 0;
 
   return (
-    <div className="relative h-full w-full bg-zinc-950 overflow-hidden">
+    <div ref={containerRef} className="relative h-full w-full bg-zinc-950 overflow-hidden">
       <div className="absolute top-2 left-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono border border-white/10">
         <div className="font-semibold mb-1 text-white">
           Behavioral KG <span className="text-white/40">(anonymized)</span>
@@ -170,6 +189,8 @@ export function BehavioralKGPanel({
       <ForceGraph2D
         ref={fgRef as unknown as React.Ref<unknown>}
         graphData={data}
+        width={dims.w}
+        height={dims.h}
         nodeRelSize={4}
         nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"
