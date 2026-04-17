@@ -220,11 +220,15 @@ export function StudentGraphPanel({
           setHoveredId((node as any)?.id || null);
         }}
         onEngineStop={() => {
-          // Auto-zoom to fit all nodes when simulation settles (fixes the
-          // "student graph spawns below viewport" issue).
+          // Auto-zoom to fit all nodes on FIRST settle only. Subsequent
+          // engine stops (from data polls) must not override the user's
+          // pan/zoom.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const fg = fgRef.current as any;
-          if (fg?.zoomToFit) fg.zoomToFit(400, 30);
+          if (fg?.zoomToFit && !fg._montyInitialFit) {
+            fg.zoomToFit(400, 30);
+            fg._montyInitialFit = true;
+          }
         }}
         onNodeClick={(node: unknown) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

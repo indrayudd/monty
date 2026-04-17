@@ -247,7 +247,10 @@ export function BehavioralKGPanel({
         onEngineStop={() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const fg = fgRef.current as any;
-          if (fg?.zoomToFit) fg.zoomToFit(400, 40);
+          if (fg?.zoomToFit && !fg._montyInitialFit) {
+            fg.zoomToFit(400, 40);
+            fg._montyInitialFit = true;
+          }
         }}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onNodeClick={(node: any) =>
