@@ -544,9 +544,9 @@ def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_
                 previous_severity,
                 trend,
                 assessment_count,
-                aggregate.get("profile_summary"),
-                aggregate.get("behavioral_patterns"),
-                aggregate.get("suggestions"),
+                aggregate.get("profile_summary") if isinstance(aggregate.get("profile_summary"), str) else json.dumps(aggregate.get("profile_summary") or ""),
+                aggregate.get("behavioral_patterns") if isinstance(aggregate.get("behavioral_patterns"), str) else json.dumps(aggregate.get("behavioral_patterns") or ""),
+                aggregate.get("suggestions") if isinstance(aggregate.get("suggestions"), str) else json.dumps(aggregate.get("suggestions") or ""),
             ),
         )
         conn.commit()
