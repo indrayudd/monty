@@ -6,3 +6,6 @@ notes_streamer/.ghost-build.json
 node_modules/
 .next/
 .worktrees/
+data/*.db
+data/*.db-wal
+data/*.db-shm
