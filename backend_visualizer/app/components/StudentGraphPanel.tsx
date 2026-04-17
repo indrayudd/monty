@@ -248,7 +248,14 @@ export function StudentGraphPanel({
           const r = n.val;
           const isHighlighted =
             highlightSlug && (n.slug === highlightSlug || n.id.endsWith(highlightSlug));
-          if (isHighlighted) {
+          // hover ring
+          if (n.id === hoveredId) {
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI);
+            ctx.strokeStyle = "rgba(255,255,255,0.9)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          } else if (isHighlighted) {
             ctx.beginPath();
             ctx.arc(n.x, n.y, r + 4, 0, 2 * Math.PI);
             ctx.fillStyle = "rgba(255,255,255,0.25)";
@@ -256,7 +263,7 @@ export function StudentGraphPanel({
           }
           ctx.beginPath();
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
-          ctx.fillStyle = isHighlighted ? "white" : n.color;
+          ctx.fillStyle = n.id === hoveredId ? "#ffffff" : isHighlighted ? "white" : n.color;
           ctx.fill();
           // Labels drawn in onRenderFramePost so they're always on top.
         }}

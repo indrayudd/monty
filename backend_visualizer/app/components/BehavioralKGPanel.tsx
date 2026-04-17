@@ -283,8 +283,16 @@ export function BehavioralKGPanel({
             ctx.fillStyle = "rgba(234, 179, 8, 0.25)";
             ctx.fill();
           }
-          // selection ring
-          if (n.id === selectedSlug) {
+          // hover ring — bright white outline so the hovered node is unmistakable
+          if (n.id === hoveredId) {
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI);
+            ctx.strokeStyle = "rgba(255,255,255,0.9)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          }
+          // selection ring (slightly different from hover — thinner, persists)
+          if (n.id === selectedSlug && n.id !== hoveredId) {
             ctx.beginPath();
             ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI);
             ctx.strokeStyle = "#ffffff";
@@ -294,7 +302,7 @@ export function BehavioralKGPanel({
           // node body
           ctx.beginPath();
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
-          ctx.fillStyle = n.color;
+          ctx.fillStyle = n.id === hoveredId ? "#ffffff" : n.color;
           ctx.fill();
           // Labels are drawn in onRenderFramePost so they're always on top.
         }}
