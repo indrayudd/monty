@@ -49,6 +49,10 @@ export function BehavioralKGPanel({
   const [minSupport, setMinSupport] = useState(2);
   const [degraded, setDegraded] = useState(false);
   const fgRef = useRef<unknown>(null);
+  // Preserve node object identity across polls so the force layout keeps x/y
+  // positions instead of re-initializing every 2s (the "singularity explosion").
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodeObjRef = useRef<Map<string, any>>(new Map());
 
   useEffect(() => {
     let stop = false;
@@ -72,16 +76,34 @@ export function BehavioralKGPanel({
     };
   }, [minSupport]);
 
-  const data = useMemo(
-    () => ({
-      nodes: nodes.map((n) => ({
-        id: n.slug,
-        name: n.title || n.slug,
-        type: n.type,
-        val: Math.max(2, Math.log2(1 + n.support_count) * 4),
-        color: TYPE_COLORS[n.type] || "#6b7280",
-        curiosity: n.curiosity_score,
-      })),
+  const data = useMemo(() => {
+    // Reuse existing node objects (preserves x/y/vx/vy set by the layout)
+    // and mutate their properties in place when incoming support/curiosity change.
+    const prev = nodeObjRef.current;
+    const next = new Map<string, Record<string, unknown>>();
+    for (const n of nodes) {
+      const existing = prev.get(n.slug);
+      if (existing) {
+        existing.name = n.title || n.slug;
+        existing.type = n.type;
+        existing.val = Math.max(2, Math.log2(1 + n.support_count) * 4);
+        existing.color = TYPE_COLORS[n.type] || "#6b7280";
+        existing.curiosity = n.curiosity_score;
+        next.set(n.slug, existing);
+      } else {
+        next.set(n.slug, {
+          id: n.slug,
+          name: n.title || n.slug,
+          type: n.type,
+          val: Math.max(2, Math.log2(1 + n.support_count) * 4),
+          color: TYPE_COLORS[n.type] || "#6b7280",
+          curiosity: n.curiosity_score,
+        });
+      }
+    }
+    nodeObjRef.current = next;
+    return {
+      nodes: Array.from(next.values()),
       links: edges.map((e) => ({
         source: e.src_slug.split("/").pop()!,
         target: e.dst_slug.split("/").pop()!,
@@ -89,9 +111,8 @@ export function BehavioralKGPanel({
         color: REL_COLORS[e.rel] || "#52525b",
         rel: e.rel,
       })),
-    }),
-    [nodes, edges],
-  );
+    };
+  }, [nodes, edges]);
 
   const isEmpty = nodes.length === 0;
 
@@ -113,7 +134,10 @@ export function BehavioralKGPanel({
           ))}
         </div>
       </div>
-      <div className="absolute top-2 right-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono flex items-center gap-2 border border-white/10">
+      <div
+        className="absolute top-2 right-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono flex items-center gap-2 border border-white/10"
+        title="min support = minimum number of supporting observations for an edge to render. Increase to hide weak/noise edges; decrease (=1) to show everything, including single-observation links."
+      >
         <label>min support</label>
         <input
           type="number"

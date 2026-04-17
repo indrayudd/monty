@@ -48,17 +48,37 @@ export function WikiPageRenderer({
       </div>
     );
 
+  const resolveRelative = (href: string): string => {
+    // Absolute-ish (starts with /) → strip leading /
+    if (href.startsWith("/")) return href.replace(/^\/+/, "");
+    // Compose: (currentDir) + href, then normalize ./ and ../
+    const currentDir = path && path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    const joined = currentDir ? currentDir + "/" + href : href;
+    const stack: string[] = [];
+    for (const part of joined.split("/")) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") { stack.pop(); continue; }
+      stack.push(part);
+    }
+    return stack.join("/");
+  };
+
   const components = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     a: (props: any) => {
       const href: string = props.href || "";
-      if (href.endsWith(".md")) {
+      // Any markdown link that points at a .md file OR at a relative path
+      // (no scheme) resolves within the wiki tree.
+      const isInternal = href.endsWith(".md") || (!href.includes("://") && !href.startsWith("#"));
+      if (isInternal) {
+        const resolved = resolveRelative(href);
         return (
           <a
             href="#"
+            title={resolved}
             onClick={(e) => {
               e.preventDefault();
-              onNavigate(href.replace(/^\.\.?\//, ""));
+              onNavigate(resolved);
             }}
             className="text-sky-400 underline"
           >

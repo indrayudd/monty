@@ -12,10 +12,19 @@ export function TopAppBar() {
     const tick = async () => {
       try {
         const o = (await api.demoOverview()) as {
-          runtime?: { mode?: string };
+          runtime?: { mode?: string; last_cycle_at?: string };
         };
         const mode = o?.runtime?.mode || "idle";
-        setStatus(mode.charAt(0).toUpperCase() + mode.slice(1));
+        // If the agent loop is actively firing (last cycle < 30s ago) show
+        // "Running" regardless of demo_runtime.mode — a dev boot with the
+        // streamer + agent_loop running out-of-band still counts as live.
+        const lastCycle = o?.runtime?.last_cycle_at;
+        let label = mode.charAt(0).toUpperCase() + mode.slice(1);
+        if (lastCycle) {
+          const ageMs = Date.now() - new Date(lastCycle).getTime();
+          if (ageMs < 30_000 && label === "Idle") label = "Running";
+        }
+        setStatus(label);
       } catch {
         setStatus("Unreachable");
       }
