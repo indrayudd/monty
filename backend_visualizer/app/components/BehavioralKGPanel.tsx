@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { forceX, forceY } from "d3-force";
 import {
   api,
   type BehavioralNode,
@@ -170,8 +171,26 @@ export function BehavioralKGPanel({
         graphData={data}
         nodeRelSize={4}
         backgroundColor="rgba(9,9,11,0)"
-        cooldownTicks={100}
-        d3AlphaDecay={0.05}
+        cooldownTicks={60}
+        d3AlphaDecay={0.1}
+        d3VelocityDecay={0.55}
+        onEngineTick={() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fg = fgRef.current as any;
+          if (!fg || fg._montyForcesTuned) return;
+          // Tune forces once the engine is live. Isolated nodes were drifting
+          // under unchecked charge force (many-body repulsion) with no link
+          // force to balance them. Weaken charge, cap its distance, and add
+          // gentle forceX/forceY pulling toward center so isolated nodes stay
+          // within the viewport.
+          if (fg.d3Force) {
+            const charge = fg.d3Force("charge");
+            if (charge) charge.strength(-45).distanceMax(260);
+            fg.d3Force("x", forceX(0).strength(0.06));
+            fg.d3Force("y", forceY(0).strength(0.06));
+            fg._montyForcesTuned = true;
+          }
+        }}
         linkWidth={(l: unknown) => (l as { width: number }).width}
         linkColor={(l: unknown) => (l as { color: string }).color}
         linkDirectionalArrowLength={3}

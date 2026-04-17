@@ -24,7 +24,10 @@ export function StudentTimeline({
 }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [incidents, setIncidents] = useState<StudentIncident[]>([]);
+  // Pre-cache per-student incidents so switching is instant.
+  const [studentData, setStudentData] = useState<
+    Record<string, StudentIncident[]>
+  >({});
   const [view, setView] = useState<View>("timeline");
 
   useEffect(() => {
@@ -40,24 +43,40 @@ export function StudentTimeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Poll ALL students in parallel every 2s so all five are warm. Switching
+  // personas then serves cached data immediately; the next tick refreshes.
   useEffect(() => {
-    if (!active) return;
+    if (personas.length === 0) return;
     let stop = false;
     const tick = async () => {
       try {
-        const r = await api.studentGraph(active);
-        if (!stop) setIncidents(r.incidents || []);
+        const results = await Promise.allSettled(
+          personas.map((p) => api.studentGraph(p.name)),
+        );
+        if (stop) return;
+        setStudentData((prev) => {
+          const next = { ...prev };
+          for (let i = 0; i < personas.length; i++) {
+            const r = results[i];
+            if (r.status === "fulfilled") {
+              next[personas[i].name] = r.value.incidents || [];
+            }
+          }
+          return next;
+        });
       } catch {
-        if (!stop) setIncidents([]);
+        // keep last known state
       }
     };
     tick();
-    const i = setInterval(tick, 2000);
+    const interval = setInterval(tick, 2000);
     return () => {
       stop = true;
-      clearInterval(i);
+      clearInterval(interval);
     };
-  }, [active]);
+  }, [personas]);
+
+  const incidents: StudentIncident[] = active ? studentData[active] || [] : [];
 
   const renderTabs = () => (
     <div className="flex gap-1 ml-auto shrink-0">
@@ -115,6 +134,7 @@ export function StudentTimeline({
         <div className="flex-1 min-h-0">
           <StudentGraphPanel
             studentName={active}
+            incidents={incidents}
             highlightSlug={highlightSlug}
             onSelectNode={onSelectBehavioralNode}
           />

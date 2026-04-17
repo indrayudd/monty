@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { forceX, forceY } from "d3-force";
 import { api, type StudentIncident, type BehavioralNode } from "../lib/api";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -26,40 +27,35 @@ function pathToType(refPath: string): string {
 
 export function StudentGraphPanel({
   studentName,
+  incidents,
   highlightSlug,
   onSelectNode,
 }: {
   studentName: string;
+  incidents: StudentIncident[];
   highlightSlug: string | null;
   onSelectNode: (slug: string | null) => void;
 }) {
-  const [incidents, setIncidents] = useState<StudentIncident[]>([]);
   const [behavioralIndex, setBehavioralIndex] = useState<
     Record<string, BehavioralNode>
   >({});
   const [degraded, setDegraded] = useState(false);
 
-  // Preserve node identity across polls so force layout keeps positions.
-  // Cleared when studentName changes (below) so each student gets a fresh layout.
+  // Preserve node identity across polls AND across student switches so the
+  // force layout keeps positions for shared nodes. Unreferenced nodes drop
+  // naturally when they're no longer in the touch count.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodeObjRef = useRef<Map<string, any>>(new Map());
+  const fgRef = useRef<unknown>(null);
 
+  // Fetch the behavioral index (for node types/titles) periodically.
+  // Incidents come in via props from the parent's per-student pre-cache.
   useEffect(() => {
-    // Reset cached state when switching students so the previous student's
-    // data/layout doesn't bleed into the new one.
-    setIncidents([]);
-    setBehavioralIndex({});
-    nodeObjRef.current = new Map();
-
     let stop = false;
     const tick = async () => {
       try {
-        const [si, bg] = await Promise.all([
-          api.studentGraph(studentName),
-          api.behavioralGraph(1),
-        ]);
+        const bg = await api.behavioralGraph(1);
         if (stop) return;
-        setIncidents(si.incidents || []);
         const idx: Record<string, BehavioralNode> = {};
         for (const n of bg.nodes || []) idx[n.slug] = n;
         setBehavioralIndex(idx);
@@ -74,7 +70,7 @@ export function StudentGraphPanel({
       stop = true;
       clearInterval(i);
     };
-  }, [studentName]);
+  }, []);
 
   const data = useMemo(() => {
     // How many of this student's incidents touched each behavioral ref
@@ -169,12 +165,25 @@ export function StudentGraphPanel({
         </div>
       )}
       <ForceGraph2D
-        key={studentName}
+        ref={fgRef as unknown as React.Ref<unknown>}
         graphData={data}
         nodeRelSize={4}
         backgroundColor="rgba(9,9,11,0)"
-        cooldownTicks={100}
-        d3AlphaDecay={0.05}
+        cooldownTicks={60}
+        d3AlphaDecay={0.1}
+        d3VelocityDecay={0.55}
+        onEngineTick={() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fg = fgRef.current as any;
+          if (!fg || fg._montyForcesTuned) return;
+          if (fg.d3Force) {
+            const charge = fg.d3Force("charge");
+            if (charge) charge.strength(-45).distanceMax(260);
+            fg.d3Force("x", forceX(0).strength(0.06));
+            fg.d3Force("y", forceY(0).strength(0.06));
+            fg._montyForcesTuned = true;
+          }
+        }}
         linkWidth={(l: unknown) => (l as { width: number }).width}
         linkColor={(l: unknown) => (l as { color: string }).color}
         nodeCanvasObject={(
