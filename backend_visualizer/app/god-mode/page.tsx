@@ -170,6 +170,9 @@ export default function GodModePage() {
         {/* 3. Manual Research Trigger */}
         <ManualResearchTrigger />
 
+        {/* 3.5. Note Cadence Control */}
+        <NoteCadenceControl />
+
         {/* 4. Demo Lifecycle */}
         <div className="border border-white/10 rounded p-3">
           <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-3">
@@ -269,6 +272,51 @@ function CuriosityTuningExpanded() {
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+function NoteCadenceControl() {
+  const [cadence, setCadence] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getNoteCadence().then((r) => {
+      setCadence(r.note_cadence);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const update = (v: number) => {
+    setCadence(v);
+    api.setNoteCadence(v).catch(() => {});
+  };
+
+  const label = cadence <= 0
+    ? "random 2–8s (default)"
+    : `${cadence.toFixed(1)}s (±20% jitter)`;
+
+  return (
+    <div className="border border-white/10 rounded p-3">
+      <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">
+        Note Generation Cadence
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={0}
+          max={10}
+          step={0.5}
+          value={cadence}
+          onChange={(e) => update(parseFloat(e.target.value))}
+          className="flex-1"
+          disabled={!loaded}
+        />
+        <span className="text-xs font-mono text-white/70 w-44 text-right">{label}</span>
+      </div>
+      <div className="text-[9px] text-white/40 font-mono mt-1">
+        0 = random 2–8s · higher = slower · streamer reads this on each tick
+      </div>
     </div>
   );
 }

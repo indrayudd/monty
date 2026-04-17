@@ -308,6 +308,24 @@ def update_curiosity_weights(payload: CuriosityWeightUpdate):
     return {"curiosity_weights": weights}
 
 
+class NoteCadenceUpdate(BaseModel):
+    cadence: float  # seconds between notes (0 = default random 2-8s)
+
+
+@app.patch("/api/runtime/note-cadence")
+def update_note_cadence(payload: NoteCadenceUpdate):
+    overrides = get_runtime_overrides()
+    overrides["_note_cadence"] = max(0, payload.cadence)
+    set_runtime_overrides(overrides)
+    return {"note_cadence": overrides["_note_cadence"]}
+
+
+@app.get("/api/runtime/note-cadence")
+def get_note_cadence():
+    overrides = get_runtime_overrides()
+    return {"note_cadence": float(overrides.get("_note_cadence", 0))}
+
+
 @app.post("/api/curiosity/recompute/{slug}")
 def curiosity_recompute(slug: str):
     from intelligence.api.services.curiosity import compute_factors

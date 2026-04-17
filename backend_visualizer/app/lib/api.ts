@@ -141,4 +141,8 @@ export const api = {
   demoReset: () => post<Record<string, unknown>>("/api/demo/reset"),
   purge: () =>
     post<{ status: string; message: string }>("/api/admin/purge"),
+  getNoteCadence: () =>
+    get<{ note_cadence: number }>("/api/runtime/note-cadence"),
+  setNoteCadence: (cadence: number) =>
+    patch<{ note_cadence: number }>("/api/runtime/note-cadence", { cadence }),
 };

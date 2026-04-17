@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { api } from "../lib/api";
 
 const PRESETS: Record<
@@ -43,23 +44,39 @@ const PRESETS: Record<
 };
 
 export function StoryPresetRow() {
+  const [active, setActive] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+
   const apply = async (name: string) => {
+    setApplying(true);
+    setActive(name);
     const preset = PRESETS[name];
     await Promise.all(
       Object.entries(preset).map(([n, v]) =>
         api.updatePersona(n, v).catch(() => {}),
       ),
     );
+    setApplying(false);
+    // Keep the active highlight until another preset is clicked.
   };
+
   return (
     <div className="flex flex-wrap gap-2 mb-4">
       {Object.keys(PRESETS).map((p) => (
         <button
           key={p}
           onClick={() => apply(p)}
-          className="px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white font-mono"
+          disabled={applying}
+          className={`px-3 py-2 rounded border text-xs font-mono transition-colors ${
+            active === p
+              ? "bg-amber-400/15 border-amber-400/40 text-amber-300"
+              : "bg-white/5 hover:bg-white/10 border-white/10 text-white"
+          } ${applying ? "opacity-50" : ""}`}
         >
           {p}
+          {active === p && !applying && (
+            <span className="ml-1.5 text-[9px] text-amber-400/70">✓</span>
+          )}
         </button>
       ))}
     </div>

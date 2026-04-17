@@ -78,7 +78,18 @@ def main() -> int:
         try:
             stream_one_note()
             consecutive_errors = 0
-            time.sleep(random.uniform(2.0, 8.0))
+            # Read cadence from god_mode_overrides (set via God Mode UI).
+            # Default: random 2-8s. If _note_cadence is set, use that as
+            # a fixed interval with ±20% jitter.
+            try:
+                ov = get_runtime_overrides()
+                cadence = float(ov.get("_note_cadence", 0))
+            except Exception:
+                cadence = 0
+            if cadence > 0:
+                time.sleep(cadence * random.uniform(0.8, 1.2))
+            else:
+                time.sleep(random.uniform(2.0, 8.0))
         except (KeyboardInterrupt, BrokenPipeError):
             return 130
         except Exception as exc:
