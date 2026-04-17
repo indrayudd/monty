@@ -74,18 +74,56 @@ export function BehavioralKGPanel({
   // positions instead of re-initializing every 2s (the "singularity explosion").
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodeObjRef = useRef<Map<string, any>>(new Map());
+  // Track previous structural state so we only trigger a force-graph reheat
+  // when nodes/edges are actually added or removed — not on every property poll.
+  const prevNodeSlugsRef = useRef<Set<string>>(new Set());
+  const prevEdgeKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let stop = false;
     const tick = async () => {
       try {
         const r = await api.behavioralGraph(minSupport);
-        if (!stop) {
-          setNodes(r.nodes || []);
-          setEdges(r.edges || []);
-          setDegraded(false);
+        if (stop) return;
+
+        const newNodes = r.nodes || [];
+        const newEdges = r.edges || [];
+
+        // Always mutate existing node objects in place for property changes
+        // (support_count, curiosity_score, etc.). The canvas callback reads
+        // these on every frame, so visual updates happen without a reheat.
+        for (const n of newNodes) {
+          const existing = nodeObjRef.current.get(n.slug);
+          if (existing) {
+            existing.val = Math.max(2, Math.log2(1 + n.support_count) * 4);
+            existing.curiosity = n.curiosity_score;
+            existing.name = n.title || n.slug;
+            existing.color = TYPE_COLORS[n.type] || "#6b7280";
+          }
         }
-      } catch {
+
+        // Check if the node SET or edge SET structurally changed.
+        const newSlugs = new Set(newNodes.map((n) => n.slug));
+        const newEdgeKeys = new Set(
+          newEdges.map((e) => `${e.src_slug}|${e.rel}|${e.dst_slug}`),
+        );
+        const structuralChange =
+          newSlugs.size !== prevNodeSlugsRef.current.size ||
+          newEdgeKeys.size !== prevEdgeKeysRef.current.size ||
+          [...newSlugs].some((s) => !prevNodeSlugsRef.current.has(s)) ||
+          [...newEdgeKeys].some((k) => !prevEdgeKeysRef.current.has(k));
+
+        // Only update React state (→ useMemo → new graphData → simulation
+        // reheat) when something structural changed. Property-only polls
+        // are silent — no jitter, no reheat, dragging uninterrupted.
+        if (structuralChange) {
+          prevNodeSlugsRef.current = newSlugs;
+          prevEdgeKeysRef.current = newEdgeKeys;
+          setNodes(newNodes);
+          setEdges(newEdges);
+        }
+        setDegraded(false);
+      } catch (err) {
         if (!stop) setDegraded(true);
       }
     };

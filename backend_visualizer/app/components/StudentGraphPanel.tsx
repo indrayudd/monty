@@ -91,6 +91,11 @@ export function StudentGraphPanel({
     };
   }, []);
 
+  // Track previous structural state to avoid force-graph reheat on property-only polls.
+  const prevIncidentIdsRef = useRef<string>("");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prevGraphDataRef = useRef<{ nodes: any[]; links: any[] } | null>(null);
+
   const data = useMemo(() => {
     // How many of this student's incidents touched each behavioral ref
     const touchCounts = new Map<string, number>();
@@ -108,7 +113,34 @@ export function StudentGraphPanel({
       }
     }
 
+    // Check if the incident set structurally changed (new/removed incidents).
+    // If not, mutate node properties in place and return the SAME graphData
+    // reference so force-graph doesn't reheat the simulation.
+    const incIdKey = incidents.map((i) => i.id).sort().join(",");
+    const structuralChange = incIdKey !== prevIncidentIdsRef.current;
+
+    // Always mutate existing node properties in place
     const prev = nodeObjRef.current;
+    for (const [refPath, count] of touchCounts) {
+      const existing = prev.get(refPath);
+      if (existing) {
+        const slug = refPath.split("/").pop() || refPath;
+        const fromIndex = behavioralIndex[slug];
+        existing.val = Math.max(3, Math.log2(1 + count) * 5);
+        existing.count = count;
+        existing.name = fromIndex?.title || slug;
+        existing.type = fromIndex?.type || pathToType(refPath);
+        existing.slug = slug;
+        existing.color = TYPE_COLORS[existing.type as string] || "#6b7280";
+      }
+    }
+
+    // If no structural change, return previous graphData ref (no reheat)
+    if (!structuralChange && prevGraphDataRef.current) {
+      return prevGraphDataRef.current;
+    }
+    prevIncidentIdsRef.current = incIdKey;
+
     const next = new Map<string, Record<string, unknown>>();
     for (const [refPath, count] of touchCounts) {
       const slug = refPath.split("/").pop() || refPath;
@@ -118,12 +150,6 @@ export function StudentGraphPanel({
       const val = Math.max(3, Math.log2(1 + count) * 5);
       const existing = prev.get(refPath);
       if (existing) {
-        existing.val = val;
-        existing.count = count;
-        existing.name = title;
-        existing.type = type;
-        existing.slug = slug;
-        existing.color = TYPE_COLORS[type] || "#6b7280";
         next.set(refPath, existing);
       } else {
         next.set(refPath, {
@@ -152,7 +178,9 @@ export function StudentGraphPanel({
       });
     }
 
-    return { nodes: Array.from(next.values()), links };
+    const result = { nodes: Array.from(next.values()), links };
+    prevGraphDataRef.current = result;
+    return result;
   }, [incidents, behavioralIndex]);
 
   const isEmpty = data.nodes.length === 0;
