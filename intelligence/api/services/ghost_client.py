@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
-
-import psycopg2
-import psycopg2.extras
-from psycopg2.extras import RealDictCursor
 
 
 _ENV_PATHS = [
@@ -24,37 +21,32 @@ for env_path in _ENV_PATHS:
             os.environ[key.strip()] = val.strip()
 
 
-DEFAULT_DB1_URL = "postgresql://tsdbadmin:cu3icrvyogvuibej@wwdclkvwu7.m5ptmvrzi0.tsdb.cloud.timescale.com:31109/tsdb"
-DEFAULT_DB2_URL = "postgresql://tsdbadmin:c7hrt7hy360h947u@h55j4jft23.m5ptmvrzi0.tsdb.cloud.timescale.com:38711/tsdb"
+DB_PATH = Path(__file__).resolve().parents[3] / "data" / "monty.db"
 
 
-def _notes_db_url() -> str:
-    return (
-        os.environ.get("MONTY_NOTES_DB_URL")
-        or os.environ.get("GHOST_NOTES_DB_URL")
-        or DEFAULT_DB1_URL
-    )
+def _conn():
+    """Return a sqlite3 connection. Creates DB + directory if missing."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
 
 
-def _agent_db_url() -> str:
-    return (
-        os.environ.get("MONTY_AGENT_DB_URL")
-        or os.environ.get("GHOST_AGENT_DB_URL")
-        or DEFAULT_DB2_URL
-    )
-
-
-def _conn(url: str):
-    return psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
+def _row_to_dict(row) -> dict | None:
+    if row is None:
+        return None
+    return dict(zip(row.keys(), tuple(row)))
 
 
 def _fetchall(cur) -> list[dict]:
-    return [dict(row) for row in cur.fetchall()]
+    return [_row_to_dict(r) for r in cur.fetchall()]
 
 
 def _fetchone(cur) -> dict | None:
     row = cur.fetchone()
-    return dict(row) if row else None
+    return _row_to_dict(row)
 
 
 def _json_dumps(value: Any) -> str:
@@ -70,21 +62,26 @@ def _json_loads(value: Any) -> Any:
 
 
 def ensure_agent_tables() -> None:
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS profile_snapshots (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT NOT NULL,
                 note_id INT NOT NULL,
                 severity TEXT NOT NULL,
                 profile_summary TEXT,
                 behavioral_patterns TEXT,
                 suggestions TEXT,
-                snapshot_at TIMESTAMPTZ DEFAULT NOW(),
+                snapshot_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (student_name, note_id)
-            );
-
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS student_profiles (
                 student_name TEXT PRIMARY KEY,
                 current_severity TEXT,
@@ -94,12 +91,15 @@ def ensure_agent_tables() -> None:
                 latest_summary TEXT,
                 latest_patterns TEXT,
                 latest_suggestions TEXT,
-                first_assessed_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            );
-
+                first_assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS student_literature (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT NOT NULL,
                 search_query TEXT NOT NULL,
                 openalex_id TEXT NOT NULL,
@@ -110,12 +110,15 @@ def ensure_agent_tables() -> None:
                 abstract TEXT,
                 landing_page_url TEXT,
                 relevance_summary TEXT,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (student_name, openalex_id)
-            );
-
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS student_alerts (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT NOT NULL,
                 note_id INT,
                 alert_type TEXT NOT NULL,
@@ -124,27 +127,37 @@ def ensure_agent_tables() -> None:
                 body TEXT NOT NULL,
                 recommended_actions_json TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'open',
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (student_name, note_id, alert_type, title)
-            );
-
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS agent_actions (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT,
                 note_id INT,
                 action_kind TEXT NOT NULL,
                 status TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            );
-
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS agent_runtime_state (
                 key TEXT PRIMARY KEY,
                 value_text TEXT,
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            );
-
+                god_mode_overrides TEXT DEFAULT '{}',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS behavioral_nodes (
                 slug TEXT PRIMARY KEY,
                 type TEXT NOT NULL,
@@ -154,43 +167,52 @@ def ensure_agent_tables() -> None:
                 students_count INT DEFAULT 0,
                 literature_refs INT DEFAULT 0,
                 curiosity_score REAL DEFAULT 0,
-                curiosity_factors JSONB,
-                last_observed_at TIMESTAMPTZ,
-                last_research_fetched_at TIMESTAMPTZ,
-                created_at TIMESTAMPTZ DEFAULT NOW(),
+                curiosity_factors TEXT,
+                last_observed_at TIMESTAMP,
+                last_research_fetched_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 file_path TEXT NOT NULL,
-                file_mtime TIMESTAMPTZ NOT NULL
-            );
-
+                file_mtime TIMESTAMP NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS behavioral_edges (
                 src_slug TEXT NOT NULL,
                 rel TEXT NOT NULL,
                 dst_slug TEXT NOT NULL,
                 support_count INT DEFAULT 0,
                 students_count INT DEFAULT 0,
-                first_observed_at TIMESTAMPTZ,
-                last_observed_at TIMESTAMPTZ,
+                first_observed_at TIMESTAMP,
+                last_observed_at TIMESTAMP,
                 file_path TEXT NOT NULL,
                 PRIMARY KEY (src_slug, rel, dst_slug)
-            );
-
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS student_incidents (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_name TEXT NOT NULL,
                 note_id INT,
                 severity TEXT,
-                ingested_at TIMESTAMPTZ DEFAULT NOW(),
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 file_path TEXT NOT NULL,
-                file_mtime TIMESTAMPTZ NOT NULL,
-                behavioral_ref_slugs TEXT[]
-            );
-
+                file_mtime TIMESTAMP NOT NULL,
+                behavioral_ref_slugs TEXT
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_student_incidents_student_name
-                ON student_incidents (student_name);
-
-            CREATE INDEX IF NOT EXISTS idx_student_incidents_bref_slugs
-                ON student_incidents USING GIN (behavioral_ref_slugs);
-
+                ON student_incidents (student_name)
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS student_profiles_index (
                 student_name TEXT PRIMARY KEY,
                 current_severity TEXT,
@@ -198,43 +220,46 @@ def ensure_agent_tables() -> None:
                 incident_count INT DEFAULT 0,
                 patterns_summary TEXT,
                 file_path TEXT NOT NULL,
-                file_mtime TIMESTAMPTZ NOT NULL
-            );
-
+                file_mtime TIMESTAMP NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS curiosity_events (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 node_slug TEXT NOT NULL,
-                fired_at TIMESTAMPTZ DEFAULT NOW(),
+                fired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 curiosity_score REAL,
-                factors JSONB,
+                factors TEXT,
                 triggered_research BOOLEAN,
                 paper_count INT DEFAULT 0
-            );
-
-            ALTER TABLE agent_runtime_state
-                ADD COLUMN IF NOT EXISTS god_mode_overrides JSONB DEFAULT '{}'::jsonb;
+            )
             """
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def ensure_notes_table() -> None:
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS ingested_observations (
-                id BIGSERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 body TEXT NOT NULL,
-                inserted_at TIMESTAMPTZ DEFAULT NOW(),
+                inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (name, body)
-            );
-
-            ALTER TABLE ingested_observations
-            ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ DEFAULT NOW();
+            )
             """
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def ensure_literature_table() -> None:
@@ -243,121 +268,174 @@ def ensure_literature_table() -> None:
 
 def get_all_notes() -> list[dict]:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute("SELECT id, name, body FROM ingested_observations ORDER BY id;")
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def get_notes_after(after_id: int) -> list[dict]:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, name, body
             FROM ingested_observations
-            WHERE id > %s
+            WHERE id > ?
             ORDER BY id;
             """,
             (after_id,),
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def get_notes_for_student(student_name: str) -> list[dict]:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, name, body
             FROM ingested_observations
-            WHERE name = %s
+            WHERE name = ?
             ORDER BY id;
             """,
             (student_name,),
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def get_latest_note_id() -> int:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM ingested_observations;")
         row = _fetchone(cur)
         return int((row or {}).get("max_id") or 0)
+    finally:
+        conn.close()
 
 
 def count_notes() -> int:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute("SELECT COUNT(*) AS total FROM ingested_observations;")
         row = _fetchone(cur)
         return int((row or {}).get("total") or 0)
+    finally:
+        conn.close()
 
 
 def insert_ingested_note(name: str, body: str) -> dict | None:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO ingested_observations (name, body)
-            VALUES (%s, %s)
-            ON CONFLICT (name, body) DO NOTHING
-            RETURNING id, name, body, inserted_at;
+            VALUES (?, ?)
+            ON CONFLICT (name, body) DO NOTHING;
             """,
             (name, body),
         )
-        row = _fetchone(cur)
         conn.commit()
-        return row
+        if cur.lastrowid and cur.rowcount > 0:
+            cur.execute(
+                "SELECT id, name, body, inserted_at FROM ingested_observations WHERE id = ?;",
+                (cur.lastrowid,),
+            )
+            return _fetchone(cur)
+        return None
+    finally:
+        conn.close()
 
 
 def insert_observation(name: str, body: str) -> int:
     """Insert an observation into ingested_observations and return its id."""
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
-            "INSERT INTO ingested_observations (name, body) VALUES (%s, %s) "
-            "ON CONFLICT (name, body) DO UPDATE SET body = EXCLUDED.body "
-            "RETURNING id",
+            "INSERT INTO ingested_observations (name, body) VALUES (?, ?) "
+            "ON CONFLICT (name, body) DO UPDATE SET body = EXCLUDED.body",
             (name, body),
         )
-        row = _fetchone(cur)
         conn.commit()
-        return (row or {}).get("id", 0)
+        row_id = cur.lastrowid
+        if not row_id:
+            cur.execute(
+                "SELECT id FROM ingested_observations WHERE name = ? AND body = ?",
+                (name, body),
+            )
+            r = _fetchone(cur)
+            row_id = (r or {}).get("id", 0)
+        return row_id
+    finally:
+        conn.close()
 
 
 def get_recent_notes(limit: int = 25) -> list[dict]:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, name, body, inserted_at
             FROM ingested_observations
             ORDER BY id DESC
-            LIMIT %s;
+            LIMIT ?;
             """,
             (limit,),
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def insert_snapshot(snapshot: dict) -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO profile_snapshots (student_name, note_id, severity, profile_summary, behavioral_patterns, suggestions)
-            VALUES (%(student_name)s, %(note_id)s, %(severity)s, %(profile_summary)s, %(behavioral_patterns)s, %(suggestions)s)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (student_name, note_id) DO UPDATE SET
                 severity = EXCLUDED.severity,
                 profile_summary = EXCLUDED.profile_summary,
                 behavioral_patterns = EXCLUDED.behavioral_patterns,
                 suggestions = EXCLUDED.suggestions,
-                snapshot_at = NOW();
+                snapshot_at = CURRENT_TIMESTAMP;
             """,
-            snapshot,
+            (
+                snapshot["student_name"],
+                snapshot["note_id"],
+                snapshot["severity"],
+                snapshot["profile_summary"],
+                snapshot["behavioral_patterns"],
+                snapshot["suggestions"],
+            ),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def _sev_rank(severity: str | None) -> int:
@@ -377,7 +455,9 @@ def upsert_student_profile(student_name: str, snapshot: dict, prev_severity: str
         trend = "stable"
 
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO student_profiles (
@@ -390,8 +470,7 @@ def upsert_student_profile(student_name: str, snapshot: dict, prev_severity: str
                 latest_patterns,
                 latest_suggestions
             )
-            VALUES (%(student_name)s, %(severity)s, %(previous_severity)s, %(trend)s, %(assessment_count)s,
-                    %(latest_summary)s, %(latest_patterns)s, %(latest_suggestions)s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (student_name) DO UPDATE SET
                 previous_severity = student_profiles.current_severity,
                 current_severity = EXCLUDED.current_severity,
@@ -400,20 +479,22 @@ def upsert_student_profile(student_name: str, snapshot: dict, prev_severity: str
                 latest_summary = EXCLUDED.latest_summary,
                 latest_patterns = EXCLUDED.latest_patterns,
                 latest_suggestions = EXCLUDED.latest_suggestions,
-                updated_at = NOW();
+                updated_at = CURRENT_TIMESTAMP;
             """,
-            {
-                "student_name": student_name,
-                "severity": severity,
-                "previous_severity": prev_severity,
-                "trend": trend,
-                "assessment_count": count,
-                "latest_summary": snapshot["profile_summary"],
-                "latest_patterns": snapshot["behavioral_patterns"],
-                "latest_suggestions": snapshot["suggestions"],
-            },
+            (
+                student_name,
+                severity,
+                prev_severity,
+                trend,
+                count,
+                snapshot["profile_summary"],
+                snapshot["behavioral_patterns"],
+                snapshot["suggestions"],
+            ),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_count: int) -> dict:
@@ -431,7 +512,9 @@ def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_
     else:
         trend = "stable"
 
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO student_profiles (
@@ -444,7 +527,7 @@ def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_
                 latest_patterns,
                 latest_suggestions
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (student_name) DO UPDATE SET
                 previous_severity = student_profiles.current_severity,
                 current_severity = EXCLUDED.current_severity,
@@ -453,7 +536,7 @@ def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_
                 latest_summary = EXCLUDED.latest_summary,
                 latest_patterns = EXCLUDED.latest_patterns,
                 latest_suggestions = EXCLUDED.latest_suggestions,
-                updated_at = NOW();
+                updated_at = CURRENT_TIMESTAMP;
             """,
             (
                 student_name,
@@ -467,12 +550,16 @@ def upsert_student_profile_state(student_name: str, aggregate: dict, assessment_
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
     return {"student_name": student_name, "current_severity": severity, "previous_severity": previous_severity, "trend": trend}
 
 
 def get_all_profiles() -> list[dict]:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT student_name, current_severity, previous_severity, trend,
@@ -484,202 +571,144 @@ def get_all_profiles() -> list[dict]:
             """
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def get_student_profile(student_name: str) -> dict | None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT student_name, current_severity, previous_severity, trend,
                    assessment_count, latest_summary, latest_patterns, latest_suggestions,
                    first_assessed_at, updated_at
             FROM student_profiles
-            WHERE student_name = %s;
+            WHERE student_name = ?;
             """,
             (student_name,),
         )
         return _fetchone(cur)
+    finally:
+        conn.close()
 
 
 def get_student_snapshots(student_name: str) -> list[dict]:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, note_id, snapshot_at, severity, profile_summary, behavioral_patterns, suggestions
             FROM profile_snapshots
-            WHERE student_name = %s
+            WHERE student_name = ?
             ORDER BY note_id;
             """,
             (student_name,),
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def replace_personality_graph(student_name: str, facets: list[dict]) -> None:
-    ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM student_personality_graph WHERE student_name = %s;", (student_name,))
-        for facet in facets:
-            cur.execute(
-                """
-                INSERT INTO student_personality_graph (
-                    student_name, facet_type, facet_value, evidence, confidence
-                )
-                VALUES (%s, %s, %s, %s, %s);
-                """,
-                (
-                    student_name,
-                    facet.get("facet_type"),
-                    facet.get("facet_value"),
-                    facet.get("evidence"),
-                    float(facet.get("confidence") or 0.5),
-                ),
-            )
-        conn.commit()
+    # Legacy function — student_personality_graph table no longer exists.
+    # Keep as no-op to avoid breaking callers.
+    pass
 
 
 def get_personality_graph(student_name: str) -> list[dict]:
-    ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT facet_type, facet_value, evidence, confidence, updated_at
-            FROM student_personality_graph
-            WHERE student_name = %s
-            ORDER BY facet_type, confidence DESC, facet_value;
-            """,
-            (student_name,),
-        )
-        return _fetchall(cur)
+    # Legacy function — student_personality_graph table no longer exists.
+    return []
 
 
 def insert_literature(row: dict) -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO student_literature
                 (student_name, search_query, openalex_id, title, authors,
                  publication_year, cited_by_count, abstract, landing_page_url, relevance_summary)
             VALUES
-                (%(student_name)s, %(search_query)s, %(openalex_id)s, %(title)s, %(authors)s,
-                 %(publication_year)s, %(cited_by_count)s, %(abstract)s, %(landing_page_url)s, %(relevance_summary)s)
+                (?, ?, ?, ?, ?,
+                 ?, ?, ?, ?, ?)
             ON CONFLICT (student_name, openalex_id) DO UPDATE SET
                 relevance_summary = EXCLUDED.relevance_summary,
                 search_query = EXCLUDED.search_query,
-                created_at = NOW();
+                created_at = CURRENT_TIMESTAMP;
             """,
-            row,
+            (
+                row.get("student_name"),
+                row.get("search_query"),
+                row.get("openalex_id"),
+                row.get("title"),
+                row.get("authors"),
+                row.get("publication_year"),
+                row.get("cited_by_count"),
+                row.get("abstract"),
+                row.get("landing_page_url"),
+                row.get("relevance_summary"),
+            ),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def get_student_literature(student_name: str) -> list[dict]:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT openalex_id, title, authors, publication_year, cited_by_count,
                    abstract, landing_page_url, search_query, relevance_summary, created_at
             FROM student_literature
-            WHERE student_name = %s
-            ORDER BY cited_by_count DESC, publication_year DESC NULLS LAST;
+            WHERE student_name = ?
+            ORDER BY cited_by_count DESC, publication_year DESC;
             """,
             (student_name,),
         )
         return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def upsert_knowledge_graph_entry(entry: dict) -> None:
-    ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO knowledge_graph (
-                student_name, topic, search_query, source_title, source_url,
-                insights_json, related_topics_json, confidence, evidence_summary
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (student_name, source_url, topic) DO UPDATE SET
-                search_query = EXCLUDED.search_query,
-                source_title = EXCLUDED.source_title,
-                insights_json = EXCLUDED.insights_json,
-                related_topics_json = EXCLUDED.related_topics_json,
-                confidence = EXCLUDED.confidence,
-                evidence_summary = EXCLUDED.evidence_summary,
-                updated_at = NOW();
-            """,
-            (
-                entry.get("student_name"),
-                entry.get("topic"),
-                entry.get("search_query"),
-                entry.get("source_title"),
-                entry.get("source_url"),
-                _json_dumps(entry.get("insights")),
-                _json_dumps(entry.get("related_topics")),
-                float(entry.get("confidence") or 0.5),
-                entry.get("evidence_summary"),
-            ),
-        )
-        conn.commit()
+    # Legacy function — knowledge_graph table no longer exists.
+    # Keep as no-op to avoid breaking callers.
+    pass
 
 
 def get_knowledge_graph_entries(student_name: str | None = None, query: str | None = None, limit: int = 10) -> list[dict]:
-    ensure_agent_tables()
-    where_parts: list[str] = []
-    params: list[Any] = []
-
-    if student_name:
-        where_parts.append("(student_name = %s OR student_name IS NULL)")
-        params.append(student_name)
-
-    if query:
-        like = f"%{query}%"
-        where_parts.append(
-            "(topic ILIKE %s OR COALESCE(search_query, '') ILIKE %s OR COALESCE(source_title, '') ILIKE %s OR COALESCE(evidence_summary, '') ILIKE %s OR insights_json ILIKE %s)"
-        )
-        params.extend([like, like, like, like, like])
-
-    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-    params.append(limit)
-
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute(
-            f"""
-            SELECT id, student_name, topic, search_query, source_title, source_url,
-                   insights_json, related_topics_json, confidence, evidence_summary, created_at, updated_at
-            FROM knowledge_graph
-            {where_sql}
-            ORDER BY confidence DESC, updated_at DESC
-            LIMIT %s;
-            """,
-            tuple(params),
-        )
-        rows = _fetchall(cur)
-
-    for row in rows:
-        row["insights"] = _json_loads(row.pop("insights_json"))
-        row["related_topics"] = _json_loads(row.pop("related_topics_json"))
-    return rows
+    # Legacy function — knowledge_graph table no longer exists.
+    return []
 
 
 def insert_alert(alert: dict) -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO student_alerts (
                 student_name, note_id, alert_type, severity, title, body, recommended_actions_json, status
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, COALESCE(%s, 'open'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'open'))
             ON CONFLICT (student_name, note_id, alert_type, title) DO UPDATE SET
                 severity = EXCLUDED.severity,
                 body = EXCLUDED.body,
                 recommended_actions_json = EXCLUDED.recommended_actions_json,
                 status = EXCLUDED.status,
-                updated_at = NOW();
+                updated_at = CURRENT_TIMESTAMP;
             """,
             (
                 alert.get("student_name"),
@@ -693,6 +722,8 @@ def insert_alert(alert: dict) -> None:
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def get_alerts(student_name: str | None = None, status: str | None = None, limit: int = 50) -> list[dict]:
@@ -701,16 +732,18 @@ def get_alerts(student_name: str | None = None, status: str | None = None, limit
     params: list[Any] = []
 
     if student_name:
-        where_parts.append("student_name = %s")
+        where_parts.append("student_name = ?")
         params.append(student_name)
     if status:
-        where_parts.append("status = %s")
+        where_parts.append("status = ?")
         params.append(status)
 
     where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
     params.append(limit)
 
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             f"""
             SELECT id, student_name, note_id, alert_type, severity, title, body, recommended_actions_json,
@@ -720,11 +753,13 @@ def get_alerts(student_name: str | None = None, status: str | None = None, limit
             ORDER BY
                 CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
                 updated_at DESC
-            LIMIT %s;
+            LIMIT ?;
             """,
             tuple(params),
         )
         rows = _fetchall(cur)
+    finally:
+        conn.close()
 
     for row in rows:
         row["recommended_actions"] = _json_loads(row.pop("recommended_actions_json"))
@@ -733,11 +768,13 @@ def get_alerts(student_name: str | None = None, status: str | None = None, limit
 
 def insert_agent_action(action: dict) -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO agent_actions (student_name, note_id, action_kind, status, payload_json)
-            VALUES (%s, %s, %s, %s, %s);
+            VALUES (?, ?, ?, ?, ?);
             """,
             (
                 action.get("student_name"),
@@ -748,21 +785,27 @@ def insert_agent_action(action: dict) -> None:
             ),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def get_agent_actions(limit: int = 50) -> list[dict]:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT id, student_name, note_id, action_kind, status, payload_json, created_at
             FROM agent_actions
             ORDER BY id DESC
-            LIMIT %s;
+            LIMIT ?;
             """,
             (limit,),
         )
         rows = _fetchall(cur)
+    finally:
+        conn.close()
     for row in rows:
         row["payload"] = _json_loads(row.pop("payload_json"))
     return rows
@@ -770,169 +813,232 @@ def get_agent_actions(limit: int = 50) -> list[dict]:
 
 def get_runtime_value(key: str, default: str | None = None) -> str | None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute("SELECT value_text FROM agent_runtime_state WHERE key = %s;", (key,))
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT value_text FROM agent_runtime_state WHERE key = ?;", (key,))
         row = _fetchone(cur)
         if not row:
             return default
         return row.get("value_text") or default
+    finally:
+        conn.close()
 
 
 def set_runtime_value(key: str, value: Any) -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO agent_runtime_state (key, value_text)
-            VALUES (%s, %s)
+            VALUES (?, ?)
             ON CONFLICT (key) DO UPDATE SET
                 value_text = EXCLUDED.value_text,
-                updated_at = NOW();
+                updated_at = CURRENT_TIMESTAMP;
             """,
             (key, str(value)),
         )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def set_runtime_values(values: dict[str, Any]) -> None:
     if not values:
         return
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         for key, value in values.items():
             cur.execute(
                 """
                 INSERT INTO agent_runtime_state (key, value_text)
-                VALUES (%s, %s)
+                VALUES (?, ?)
                 ON CONFLICT (key) DO UPDATE SET
                     value_text = EXCLUDED.value_text,
-                    updated_at = NOW();
+                    updated_at = CURRENT_TIMESTAMP;
                 """,
                 (key, "" if value is None else str(value)),
             )
         conn.commit()
+    finally:
+        conn.close()
 
 
 def delete_runtime_keys(keys: list[str]) -> None:
     if not keys:
         return
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM agent_runtime_state WHERE key = ANY(%s);", (keys,))
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in keys)
+        cur.execute(f"DELETE FROM agent_runtime_state WHERE key IN ({placeholders});", keys)
         conn.commit()
+    finally:
+        conn.close()
 
 
 def get_runtime_state() -> dict[str, str]:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
         cur.execute("SELECT key, value_text FROM agent_runtime_state ORDER BY key;")
         rows = _fetchall(cur)
+    finally:
+        conn.close()
     return {row["key"]: row.get("value_text") for row in rows}
 
 
 def reset_notes_state() -> None:
     ensure_notes_table()
-    with _conn(_notes_db_url()) as conn, conn.cursor() as cur:
-        cur.execute("TRUNCATE ingested_observations RESTART IDENTITY;")
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM ingested_observations;")
         conn.commit()
+    finally:
+        conn.close()
 
 
 def reset_agent_state() -> None:
     ensure_agent_tables()
-    with _conn(_agent_db_url()) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            TRUNCATE profile_snapshots,
-                     student_literature,
-                     student_personality_graph,
-                     knowledge_graph,
-                     student_alerts,
-                     agent_actions
-            RESTART IDENTITY;
-
-            TRUNCATE student_profiles;
-            TRUNCATE agent_runtime_state;
-            """
-        )
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        for table in [
+            "profile_snapshots",
+            "student_literature",
+            "student_alerts",
+            "agent_actions",
+            "student_profiles",
+            "agent_runtime_state",
+            "behavioral_nodes",
+            "behavioral_edges",
+            "student_incidents",
+            "student_profiles_index",
+            "curiosity_events",
+        ]:
+            cur.execute(f"DELETE FROM {table};")
         conn.commit()
+    finally:
+        conn.close()
 
 
 def list_behavioral_nodes() -> list[dict]:
     """Return all rows from behavioral_nodes index. Empty list if none."""
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT slug, type, title, summary, support_count, students_count, "
-                "literature_refs, curiosity_score, curiosity_factors, "
-                "last_observed_at, last_research_fetched_at, created_at, file_path "
-                "FROM behavioral_nodes ORDER BY support_count DESC"
-            )
-            return [dict(row) for row in cur.fetchall()]
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT slug, type, title, summary, support_count, students_count, "
+            "literature_refs, curiosity_score, curiosity_factors, "
+            "last_observed_at, last_research_fetched_at, created_at, file_path "
+            "FROM behavioral_nodes ORDER BY support_count DESC"
+        )
+        rows = _fetchall(cur)
+    finally:
+        conn.close()
+    for row in rows:
+        row["curiosity_factors"] = _json_loads(row.get("curiosity_factors"))
+    return rows
 
 
 def list_behavioral_edges(min_support: int = 1) -> list[dict]:
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT src_slug, rel, dst_slug, support_count, students_count, "
-                "first_observed_at, last_observed_at "
-                "FROM behavioral_edges WHERE support_count >= %s",
-                (min_support,),
-            )
-            return [dict(row) for row in cur.fetchall()]
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT src_slug, rel, dst_slug, support_count, students_count, "
+            "first_observed_at, last_observed_at "
+            "FROM behavioral_edges WHERE support_count >= ?",
+            (min_support,),
+        )
+        return _fetchall(cur)
+    finally:
+        conn.close()
 
 
 def list_student_incidents(student_name: str, limit: int = 50) -> list[dict]:
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, student_name, note_id, severity, ingested_at, file_path, "
-                "behavioral_ref_slugs "
-                "FROM student_incidents WHERE student_name = %s "
-                "ORDER BY ingested_at DESC LIMIT %s",
-                (student_name, limit),
-            )
-            return [dict(row) for row in cur.fetchall()]
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, student_name, note_id, severity, ingested_at, file_path, "
+            "behavioral_ref_slugs "
+            "FROM student_incidents WHERE student_name = ? "
+            "ORDER BY ingested_at DESC LIMIT ?",
+            (student_name, limit),
+        )
+        rows = _fetchall(cur)
+    finally:
+        conn.close()
+    for row in rows:
+        row["behavioral_ref_slugs"] = _json_loads(row.get("behavioral_ref_slugs"))
+    return rows
 
 
 def list_curiosity_events(limit: int = 50) -> list[dict]:
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, node_slug, fired_at, curiosity_score, factors, "
-                "triggered_research, paper_count "
-                "FROM curiosity_events ORDER BY fired_at DESC LIMIT %s",
-                (limit,),
-            )
-            return [dict(row) for row in cur.fetchall()]
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, node_slug, fired_at, curiosity_score, factors, "
+            "triggered_research, paper_count "
+            "FROM curiosity_events ORDER BY fired_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = _fetchall(cur)
+    finally:
+        conn.close()
+    for row in rows:
+        row["factors"] = _json_loads(row.get("factors"))
+    return rows
 
 
 def get_runtime_overrides() -> dict:
     """Return agent_runtime_state.god_mode_overrides as a dict (empty if null)."""
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT god_mode_overrides FROM agent_runtime_state "
-                "WHERE key = '_god_mode' LIMIT 1"
-            )
-            row = cur.fetchone()
-            if not row:
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT god_mode_overrides FROM agent_runtime_state "
+            "WHERE key = '_god_mode' LIMIT 1"
+        )
+        row = _fetchone(cur)
+        if not row:
+            return {}
+        val = row.get("god_mode_overrides")
+        if val is None:
+            return {}
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except (json.JSONDecodeError, TypeError):
                 return {}
-            val = row["god_mode_overrides"] if isinstance(row, dict) else row[0]
-            return val if val else {}
+        return val if val else {}
+    finally:
+        conn.close()
 
 
 def set_runtime_overrides(overrides: dict) -> None:
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO agent_runtime_state (key, god_mode_overrides)
-                VALUES ('_god_mode', %s)
-                ON CONFLICT (key) DO UPDATE SET
-                    god_mode_overrides = EXCLUDED.god_mode_overrides,
-                    updated_at = NOW()
-                """,
-                (psycopg2.extras.Json(overrides),),
-            )
-            conn.commit()
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO agent_runtime_state (key, god_mode_overrides)
+            VALUES ('_god_mode', ?)
+            ON CONFLICT (key) DO UPDATE SET
+                god_mode_overrides = EXCLUDED.god_mode_overrides,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (json.dumps(overrides),),
+        )
+        conn.commit()
+    finally:
+        conn.close()

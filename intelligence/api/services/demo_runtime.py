@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 import time
 
-from psycopg2 import OperationalError
+from sqlite3 import OperationalError
 
 from intelligence.api.services.ghost_client import (
     count_notes,

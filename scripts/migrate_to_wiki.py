@@ -7,7 +7,7 @@ Usage:
     python3 -m scripts.migrate_to_wiki --dry-run
     python3 -m scripts.migrate_to_wiki
 
-    # After migration completes, drop legacy tables (requires explicit confirmation):
+    # Legacy --drop-legacy flag is a no-op (tables already removed).
     python3 -m scripts.migrate_to_wiki --drop-legacy
 """
 from __future__ import annotations
@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 import frontmatter
 
 from intelligence.api.services.ghost_client import (
-    _agent_db_url,
     get_all_profiles,
     get_student_snapshots,
     get_student_literature,
@@ -136,37 +135,9 @@ def migrate_literature(dry_run: bool) -> int:
 
 
 def drop_legacy() -> int:
-    """Drop legacy knowledge_graph and student_personality_graph tables.
-
-    Requires the user to type DROP at the confirmation prompt. Returns 0 on
-    success, 1 on cancellation or error.
-    """
-    print("WARNING: This will DROP knowledge_graph CASCADE and student_personality_graph CASCADE.")
-    print("This is irreversible. Only proceed after migrate_to_wiki has populated wiki/ from these tables.")
-    try:
-        confirm = input("Type DROP to confirm: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        print("\nAborted.", file=sys.stderr)
-        return 1
-    if confirm != "DROP":
-        print("Confirmation did not match. Aborting.", file=sys.stderr)
-        return 1
-
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    url = _agent_db_url()
-    try:
-        conn = psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("DROP TABLE IF EXISTS knowledge_graph CASCADE")
-            cur.execute("DROP TABLE IF EXISTS student_personality_graph CASCADE")
-        conn.close()
-        print("dropped: knowledge_graph, student_personality_graph")
-        return 0
-    except Exception as exc:
-        print(f"Drop failed: {exc}", file=sys.stderr)
-        return 1
+    """No-op: legacy tables (knowledge_graph, student_personality_graph) were already removed."""
+    print("Legacy tables were already dropped in Phase 5b. Nothing to do.")
+    return 0
 
 
 def main() -> int:
@@ -181,7 +152,7 @@ def main() -> int:
     parser.add_argument(
         "--drop-legacy",
         action="store_true",
-        help="(NOT YET IMPLEMENTED) Drop legacy DB tables after migration.",
+        help="No-op (legacy tables already removed).",
     )
     args = parser.parse_args()
 
@@ -200,7 +171,7 @@ def main() -> int:
     if not args.dry_run:
         print("regenerating wiki indexes…")
         wiki_writer.update_indexes()
-        print("rebuilding Postgres index from wiki/…")
+        print("rebuilding SQLite index from wiki/…")
         counts = wiki_indexer.full_rebuild()
         print(f"indexed: {counts}")
 

@@ -10,7 +10,8 @@ import frontmatter as _fm
 
 from intelligence.api.services.curiosity import evaluate_gate
 from intelligence.api.services.ghost_client import (
-    _agent_db_url,
+    _conn,
+    _fetchall,
 )
 from intelligence.api.services.llm_service import (
     generate_search_queries,
@@ -25,16 +26,6 @@ from notes_streamer.literature_scraping.api_usage_example import (
 )
 
 _log = logging.getLogger(__name__)
-
-
-def _conn(url: str):
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    return psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
-
-
-def _db():
-    return _conn(_agent_db_url())
 
 
 _ENV_PATHS = [
@@ -152,22 +143,25 @@ def _wiki_paper_entries(student_name: str | None, query: str | None, limit: int 
     """Return paper entries from the wiki index (behavioral_nodes / student_incidents)
     as a list of lightweight dicts — replaces the legacy get_knowledge_graph_entries call."""
     try:
-        with _db() as conn:
-            with conn.cursor() as cur:
-                if student_name:
-                    cur.execute(
-                        "SELECT slug, summary, literature_refs, last_research_fetched_at "
-                        "FROM behavioral_nodes WHERE summary ILIKE %s LIMIT %s",
-                        (f"%{(query or '')[:60]}%", limit),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT slug, summary, literature_refs, last_research_fetched_at "
-                        "FROM behavioral_nodes LIMIT %s",
-                        (limit,),
-                    )
-                rows = cur.fetchall()
-        return [dict(r) for r in rows]
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            if student_name:
+                cur.execute(
+                    "SELECT slug, summary, literature_refs, last_research_fetched_at "
+                    "FROM behavioral_nodes WHERE summary LIKE ? LIMIT ?",
+                    (f"%{(query or '')[:60]}%", limit),
+                )
+            else:
+                cur.execute(
+                    "SELECT slug, summary, literature_refs, last_research_fetched_at "
+                    "FROM behavioral_nodes LIMIT ?",
+                    (limit,),
+                )
+            rows = _fetchall(cur)
+        finally:
+            conn.close()
+        return rows
     except Exception:
         return []
 
@@ -176,21 +170,24 @@ def _mark_node_researched(slug_full: str, paper_count: int) -> None:
     """Update behavioral_nodes.last_research_fetched_at and increment literature_refs."""
     slug = slug_full.split("/")[-1]
     try:
-        with _db() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE behavioral_nodes SET last_research_fetched_at = NOW(), "
-                    "literature_refs = literature_refs + %s WHERE slug = %s",
-                    (paper_count, slug),
-                )
-                cur.execute(
-                    "UPDATE curiosity_events SET paper_count = %s "
-                    "WHERE node_slug = %s AND fired_at = ("
-                    "  SELECT MAX(fired_at) FROM curiosity_events WHERE node_slug = %s"
-                    ")",
-                    (paper_count, slug_full, slug_full),
-                )
-                conn.commit()
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE behavioral_nodes SET last_research_fetched_at = CURRENT_TIMESTAMP, "
+                "literature_refs = literature_refs + ? WHERE slug = ?",
+                (paper_count, slug),
+            )
+            cur.execute(
+                "UPDATE curiosity_events SET paper_count = ? "
+                "WHERE node_slug = ? AND fired_at = ("
+                "  SELECT MAX(fired_at) FROM curiosity_events WHERE node_slug = ?"
+                ")",
+                (paper_count, slug_full, slug_full),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as exc:
         _log.warning("_mark_node_researched failed for %s: %s", slug_full, exc)
 

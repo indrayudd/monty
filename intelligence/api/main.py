@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from intelligence.api.services.demo_runtime import bootstrap_demo, get_demo_overview, reset_demo, start_demo, stop_demo
 from intelligence.api.services.ghost_client import (
+    _conn,
     ensure_agent_tables,
     ensure_notes_table,
     get_alerts,
@@ -369,22 +370,29 @@ def admin_purge():
     """Nuclear option: wipe all DB state + wiki generated content. Keeps personas + skeleton."""
     import shutil
     from intelligence.api.services.wiki_paths import WIKI_ROOT, BEHAVIORAL_TYPES
-    from intelligence.api.services.ghost_client import _conn, _notes_db_url, _agent_db_url
 
-    # 1. Truncate all data tables
-    with _conn(_notes_db_url()) as conn:
-        with conn.cursor() as cur:
-            cur.execute("TRUNCATE ingested_observations RESTART IDENTITY CASCADE")
-            conn.commit()
-    with _conn(_agent_db_url()) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "TRUNCATE behavioral_nodes, behavioral_edges, student_incidents, "
-                "student_profiles_index, curiosity_events, student_profiles, "
-                "profile_snapshots, student_literature, student_alerts, "
-                "agent_actions, agent_runtime_state RESTART IDENTITY CASCADE"
-            )
-            conn.commit()
+    # 1. Delete all data from all tables (single DB now)
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        for table in [
+            "ingested_observations",
+            "behavioral_nodes",
+            "behavioral_edges",
+            "student_incidents",
+            "student_profiles_index",
+            "curiosity_events",
+            "student_profiles",
+            "profile_snapshots",
+            "student_literature",
+            "student_alerts",
+            "agent_actions",
+            "agent_runtime_state",
+        ]:
+            cur.execute(f"DELETE FROM {table}")
+        conn.commit()
+    finally:
+        conn.close()
 
     # 2. Wipe wiki generated content (keep skeleton + personas)
     for bt in BEHAVIORAL_TYPES:

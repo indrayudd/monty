@@ -6,32 +6,21 @@ when score >= 0.70 and 30-min cooldown elapsed.
 """
 from __future__ import annotations
 
+import json
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import frontmatter
-import psycopg2.extras
 
 from intelligence.api.services.ghost_client import (
+    _conn,
+    _fetchall,
+    _fetchone,
     get_runtime_overrides,
 )
 from intelligence.api.services.wiki_paths import BEHAVIORAL_TYPES, WIKI_ROOT
-
-
-# ---------------------------------------------------------------------------
-# Helpers imported locally to avoid circular-import with ghost_client
-# ---------------------------------------------------------------------------
-
-def _conn(url: str):
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    return psycopg2.connect(url, cursor_factory=RealDictCursor, connect_timeout=5)
-
-
-def _db():
-    from intelligence.api.services.ghost_client import _agent_db_url as _u
-    return _conn(_u())
 
 
 # ---------------------------------------------------------------------------
@@ -112,15 +101,19 @@ def _recent_severity_for_node(slug_full: str) -> float:
     """Return max severity (red=1.0, yellow=0.5, green=0.0) of recent incidents touching this node."""
     sev_map = {"red": 1.0, "yellow": 0.5, "green": 0.0}
     try:
-        with _db() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT severity FROM student_incidents "
-                    "WHERE %s = ANY(behavioral_ref_slugs) "
-                    "ORDER BY ingested_at DESC LIMIT 5",
-                    (f"behavioral/{slug_full}",),
-                )
-                rows = cur.fetchall()
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            search_val = f'%"behavioral/{slug_full}"%'
+            cur.execute(
+                "SELECT severity FROM student_incidents "
+                "WHERE behavioral_ref_slugs LIKE ? "
+                "ORDER BY ingested_at DESC LIMIT 5",
+                (search_val,),
+            )
+            rows = _fetchall(cur)
+        finally:
+            conn.close()
         return max((sev_map.get(row["severity"], 0.0) for row in rows), default=0.0)
     except Exception:
         return 0.0
@@ -232,14 +225,17 @@ def _current_weights() -> dict[str, float]:
 def _last_research_at(node_slug: str):
     slug = node_slug.split("/")[-1]
     try:
-        with _db() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT last_research_fetched_at FROM behavioral_nodes WHERE slug = %s",
-                    (slug,),
-                )
-                row = cur.fetchone()
-                return row["last_research_fetched_at"] if row else None
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT last_research_fetched_at FROM behavioral_nodes WHERE slug = ?",
+                (slug,),
+            )
+            row = _fetchone(cur)
+            return row["last_research_fetched_at"] if row else None
+        finally:
+            conn.close()
     except Exception:
         return None
 
@@ -253,10 +249,15 @@ def evaluate_gate(node_slug: str) -> dict:
     last = _last_research_at(node_slug)
     cooldown_active = False
     if last:
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        elapsed = datetime.now(timezone.utc) - last
-        cooldown_active = elapsed < timedelta(minutes=COOLDOWN_MINUTES)
+        try:
+            if isinstance(last, str):
+                last = datetime.fromisoformat(last)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            elapsed = datetime.now(timezone.utc) - last
+            cooldown_active = elapsed < timedelta(minutes=COOLDOWN_MINUTES)
+        except Exception:
+            pass
 
     fire = (score >= CURIOSITY_THRESHOLD) and (not cooldown_active)
     reason = (
@@ -267,17 +268,19 @@ def evaluate_gate(node_slug: str) -> dict:
 
     # Persist event row for the audit log surfaced in /console.
     try:
-        with _db() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO curiosity_events (node_slug, fired_at, curiosity_score, factors, "
-                    "triggered_research, paper_count) VALUES (%s, NOW(), %s, %s, %s, 0)",
-                    (node_slug, score, psycopg2.extras.Json(factors.to_dict()), fire),
-                )
-                conn.commit()
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO curiosity_events (node_slug, fired_at, curiosity_score, factors, "
+                "triggered_research, paper_count) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, 0)",
+                (node_slug, score, json.dumps(factors.to_dict()), fire),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as exc:
         # Don't let DB errors block callers
-        import logging
         logging.getLogger(__name__).warning("curiosity_events insert failed: %s", exc)
 
     return {
