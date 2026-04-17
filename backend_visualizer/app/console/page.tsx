@@ -1,60 +1,80 @@
 "use client";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { CuriosityEventsStream } from "../components/CuriosityEventsStream";
-import { api } from "../lib/api";
+import { StatusCards } from "../components/StatusCards";
+import { TraceLog } from "../components/TraceLog";
 
-type OverviewRuntime = {
-  mode?: string;
-  current_stage?: string;
-  current_student?: string;
-  current_note_id?: number | null;
-  last_cycle_completed_at?: string;
-  [k: string]: unknown;
-};
+const NAV_LINKS = [
+  { href: "/", label: "Live" },
+  { href: "/wiki", label: "Wiki" },
+  { href: "/console", label: "Console" },
+  { href: "/god-mode", label: "God Mode" },
+];
+
+function BottomBar({ filter, onFilterChange }: { filter: string; onFilterChange: (v: string) => void }) {
+  const pathname = usePathname();
+  return (
+    <footer className="h-11 border-t border-white/10 bg-black shrink-0 flex items-center px-3 gap-3">
+      <nav className="flex gap-0.5">
+        {NAV_LINKS.map(({ href, label }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`font-mono text-[11px] px-2.5 py-1 rounded transition-colors ${
+                active
+                  ? "bg-white/10 text-white"
+                  : "text-white/40 hover:text-white/70 hover:bg-white/5"
+              }`}
+            >
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="flex-1 flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="filter log…"
+          value={filter}
+          onChange={e => onFilterChange(e.target.value)}
+          className="h-6 px-2 bg-zinc-900 border border-white/10 rounded font-mono text-[11px] text-white/70 placeholder:text-white/20 focus:outline-none focus:border-white/20 w-48"
+        />
+      </div>
+      <button className="font-mono text-[10px] px-3 py-1 rounded border border-amber-500/40 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors shrink-0">
+        PAUSE STREAM
+      </button>
+    </footer>
+  );
+}
 
 export default function ConsolePage() {
-  const [overview, setOverview] = useState<{
-    runtime?: OverviewRuntime;
-  } | null>(null);
-  const [degraded, setDegraded] = useState(false);
-
-  useEffect(() => {
-    const tick = async () => {
-      try {
-        const r = (await api.demoOverview()) as {
-          runtime?: OverviewRuntime;
-        };
-        setOverview(r);
-        setDegraded(false);
-      } catch {
-        setDegraded(true);
-      }
-    };
-    tick();
-    const i = setInterval(tick, 1500);
-    return () => clearInterval(i);
-  }, []);
+  const [filterText, setFilterText] = useState("");
 
   return (
-    <div className="h-[calc(100vh-3rem)] p-4 space-y-4 overflow-y-auto">
-      <section className="bg-zinc-950 border border-white/10 rounded p-3 font-mono text-xs text-white/80">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-white/50">Agent status</div>
-          {degraded && (
-            <div className="text-amber-300/80 text-[10px]">
-              ⚠ /api/demo/overview unreachable
-            </div>
-          )}
-        </div>
-        {overview?.runtime ? (
-          <pre className="whitespace-pre-wrap text-white/80">
-            {JSON.stringify(overview.runtime, null, 2)}
-          </pre>
-        ) : (
-          <div className="text-white/30">(no runtime snapshot yet)</div>
-        )}
-      </section>
-      <CuriosityEventsStream />
+    <div className="h-[calc(100vh-3rem)] flex flex-col overflow-hidden">
+      {/* Main scrollable content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Section 1: Status Cards */}
+        <StatusCards />
+
+        {/* Section 2: Trace Log */}
+        <TraceLog />
+
+        {/* Section 3: Curiosity + Research Stream */}
+        <section>
+          <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-2 px-1">
+            Curiosity + Research Stream
+          </div>
+          <CuriosityEventsStream />
+        </section>
+      </div>
+
+      {/* Bottom Bar */}
+      <BottomBar filter={filterText} onFilterChange={setFilterText} />
     </div>
   );
 }
