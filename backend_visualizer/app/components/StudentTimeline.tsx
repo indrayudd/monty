@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, type StudentIncident, type Persona } from "../lib/api";
+import { StudentGraphPanel } from "./StudentGraphPanel";
+import { StudentResearchPanel } from "./StudentResearchPanel";
 
 const SEVERITY_COLORS: Record<string, string> = {
   red: "bg-rose-500",
@@ -9,16 +11,21 @@ const SEVERITY_COLORS: Record<string, string> = {
   "": "bg-zinc-600",
 };
 
+type View = "timeline" | "graph" | "research";
+
 export function StudentTimeline({
   highlightSlug,
   onOpenIncident,
+  onSelectBehavioralNode,
 }: {
   highlightSlug: string | null;
   onOpenIncident: (incident: StudentIncident) => void;
+  onSelectBehavioralNode: (slug: string | null) => void;
 }) {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [incidents, setIncidents] = useState<StudentIncident[]>([]);
+  const [view, setView] = useState<View>("timeline");
 
   useEffect(() => {
     api
@@ -52,9 +59,33 @@ export function StudentTimeline({
     };
   }, [active]);
 
+  const renderTabs = () => (
+    <div className="flex gap-1 ml-auto shrink-0">
+      {(
+        [
+          ["timeline", "Timeline"],
+          ["graph", "Graph"],
+          ["research", "Research"],
+        ] as const
+      ).map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => setView(v)}
+          className={`px-2.5 py-1 text-[11px] font-mono rounded transition ${
+            view === v
+              ? "bg-white/10 text-white"
+              : "text-white/50 hover:text-white"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col bg-zinc-950">
-      <div className="flex gap-2 p-2 overflow-x-auto border-b border-white/5">
+      <div className="flex items-center gap-2 p-2 overflow-x-auto border-b border-white/5">
         {personas.length === 0 && (
           <div className="text-white/30 text-xs font-mono px-2 py-1.5">
             No personas loaded — check /api/personas.
@@ -64,7 +95,7 @@ export function StudentTimeline({
           <button
             key={p.name}
             onClick={() => setActive(p.name)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded font-mono text-xs border transition ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded font-mono text-xs border transition shrink-0 ${
               active === p.name
                 ? "border-white bg-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.1)]"
                 : "border-white/10 hover:border-white/30"
@@ -78,7 +109,23 @@ export function StudentTimeline({
             <span className="text-white/60">{p.age_band}</span>
           </button>
         ))}
+        {renderTabs()}
       </div>
+      {view === "graph" && active && (
+        <div className="flex-1 min-h-0">
+          <StudentGraphPanel
+            studentName={active}
+            highlightSlug={highlightSlug}
+            onSelectNode={onSelectBehavioralNode}
+          />
+        </div>
+      )}
+      {view === "research" && active && (
+        <div className="flex-1 min-h-0">
+          <StudentResearchPanel studentName={active} />
+        </div>
+      )}
+      {view === "timeline" && (
       <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-2 p-3 min-h-0">
         {active && incidents.length === 0 && (
           <div className="text-white/40 text-sm self-center font-mono w-full text-center">
@@ -138,6 +185,7 @@ export function StudentTimeline({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

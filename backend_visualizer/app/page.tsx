@@ -26,6 +26,7 @@ export default function LivePage() {
         <StudentTimeline
           highlightSlug={selectedSlug}
           onOpenIncident={setOpenIncident}
+          onSelectBehavioralNode={setSelectedSlug}
         />
       </div>
       <IncidentDrawer
