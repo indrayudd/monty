@@ -67,17 +67,31 @@ def stream_one_note() -> None:
         set_runtime_overrides(ov)
 
 
+MAX_CONSECUTIVE_ERRORS = 10
+RETRY_BACKOFF_SECONDS = 5.0
+
+
 def main() -> int:
     print("[streamer] starting persona-driven note stream", flush=True)
-    try:
-        while True:
+    consecutive_errors = 0
+    while True:
+        try:
             stream_one_note()
+            consecutive_errors = 0
             time.sleep(random.uniform(2.0, 8.0))
-    except (KeyboardInterrupt, BrokenPipeError):
-        return 130
-    except Exception as exc:
-        print(f"[streamer] error: {exc}", file=sys.stderr)
-        return 1
+        except (KeyboardInterrupt, BrokenPipeError):
+            return 130
+        except Exception as exc:
+            consecutive_errors += 1
+            print(
+                f"[streamer] error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                print("[streamer] too many consecutive errors, exiting", file=sys.stderr, flush=True)
+                return 1
+            time.sleep(RETRY_BACKOFF_SECONDS)
 
     return 0
 
