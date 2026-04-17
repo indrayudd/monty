@@ -4,13 +4,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type StudentIncident, type WikiPage } from "../lib/api";
 
+// From DESIGN.md § 2 — 10% opacity bg + full-opacity text per the "Slim Pills" rule
 const TYPE_COLORS: Record<string, string> = {
-  setting: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-  antecedent: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-  behavior: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-  function: "bg-pink-500/20 text-pink-300 border-pink-500/30",
-  brain: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-  response: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  setting: "border-[#00D8FF]/30 text-[#00D8FF]",       // Cyan
+  antecedent: "border-[#BC8CFF]/30 text-[#BC8CFF]",    // Purple
+  behavior: "border-[#FFA657]/30 text-[#FFA657]",      // Orange
+  function: "border-[#FF7EB6]/30 text-[#FF7EB6]",      // Magenta
+  brain: "border-[#79C0FF]/30 text-[#79C0FF]",         // Indigo
+  response: "border-[#3FB950]/30 text-[#3FB950]",      // Teal
 };
 
 export function IncidentDrawer({

@@ -12,14 +12,15 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
 }) as unknown as React.ComponentType<Record<string, unknown>>;
 
+// From DESIGN.md § 2 "Behavioral Node Hues (The Functional Spectrum)"
 const TYPE_COLORS: Record<string, string> = {
-  setting_event: "#7c3aed", // violet
-  antecedent: "#0ea5e9", // sky
-  behavior: "#f97316", // orange
-  function: "#10b981", // emerald
-  brain_state: "#eab308", // amber-yellow (distinct from severity yellow via context)
-  response: "#ec4899", // pink
-  protective_factor: "#94a3b8", // muted slate
+  setting_event: "#00D8FF",   // Cyan
+  antecedent: "#BC8CFF",      // Purple
+  behavior: "#FFA657",        // Orange
+  function: "#FF7EB6",        // Magenta
+  brain_state: "#79C0FF",     // Indigo
+  response: "#3FB950",        // Teal
+  protective_factor: "#94a3b8", // Muted slate (not in DESIGN.md, kept as neutral)
 };
 
 const REL_COLORS: Record<string, string> = {
@@ -296,9 +297,18 @@ export function BehavioralKGPanel({
           // Label only for hovered or selected node — avoids clutter at zoom.
           if (n.id === hoveredId || n.id === selectedSlug) {
             const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
-            ctx.fillStyle = "rgba(255,255,255,0.75)";
             ctx.font = `${fontSize}px sans-serif`;
-            ctx.fillText(n.name, n.x + r + 2, n.y + 3);
+            const text = n.name;
+            const textW = ctx.measureText(text).width;
+            const tx = n.x + r + 4;
+            const ty = n.y + 3;
+            // Dark pill behind text for legibility against bright nodes
+            ctx.fillStyle = "rgba(0,0,0,0.75)";
+            ctx.beginPath();
+            ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
+            ctx.fill();
+            ctx.fillStyle = "rgba(255,255,255,0.92)";
+            ctx.fillText(text, tx, ty);
           }
         }}
         onNodeHover={(node: unknown) => {
