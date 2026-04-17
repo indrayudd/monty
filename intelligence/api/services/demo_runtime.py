@@ -16,8 +16,6 @@ from intelligence.api.services.ghost_client import (
     get_agent_actions,
     get_alerts,
     get_all_profiles,
-    get_knowledge_graph_entries,
-    get_personality_graph,
     get_recent_notes,
     get_runtime_state,
     insert_agent_action,
@@ -320,11 +318,11 @@ def get_demo_overview() -> dict:
     try:
         profiles = get_all_profiles()
         selected_student = profiles[0]["student_name"] if profiles else None
-        personality_graphs = {
-            profile["student_name"]: get_personality_graph(profile["student_name"])
-            for profile in profiles
-        }
-        knowledge_nodes = get_knowledge_graph_entries(limit=40)
+        # personality_graphs and knowledge_nodes removed in Phase 5b: the legacy
+        # student_personality_graph and knowledge_graph tables were dropped.
+        # New visualizer reads /api/student-graph and /api/behavioral-graph instead.
+        personality_graphs: dict[str, list] = {}
+        knowledge_nodes: list[dict] = []
         notes = get_recent_notes(limit=20)
         actions = get_agent_actions(limit=40)
         alerts = get_alerts(status=None, limit=20)

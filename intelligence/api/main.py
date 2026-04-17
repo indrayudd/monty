@@ -12,8 +12,6 @@ from intelligence.api.services.ghost_client import (
     ensure_notes_table,
     get_alerts,
     get_all_profiles,
-    get_knowledge_graph_entries,
-    get_personality_graph,
     get_runtime_state,
     get_student_literature,
     get_student_profile,
@@ -135,23 +133,9 @@ def student_alerts(student_name: str, status: str | None = "open"):
     return {"student_name": student_name, "alerts": get_alerts(student_name=student_name, status=status)}
 
 
-@app.get("/api/personality-graph/{student_name}")
-def student_personality_graph(student_name: str):
-    profile = get_student_profile(student_name)
-    if not profile:
-        raise HTTPException(404, f"Student '{student_name}' not found")
-    return {"student_name": student_name, "facets": get_personality_graph(student_name)}
-
-
-@app.get("/api/knowledge-graph/{student_name}")
-def student_knowledge_graph(student_name: str, query: str | None = None):
-    profile = get_student_profile(student_name)
-    if not profile:
-        raise HTTPException(404, f"Student '{student_name}' not found")
-    return {
-        "student_name": student_name,
-        "results": get_knowledge_graph_entries(student_name=student_name, query=query or profile.get("latest_patterns"), limit=12),
-    }
+# /api/personality-graph/{name} and /api/knowledge-graph/{name} removed in Phase 5b.
+# Replaced by /api/student-graph/{name} (per-student incidents + refs) and
+# /api/behavioral-graph (anonymized cross-student KG).
 
 
 @app.get("/api/agent/status")
