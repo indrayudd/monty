@@ -41,13 +41,25 @@ export function GodModePanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const BoltIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M13 2L4.09 12.97A1 1 0 004.87 14.6H10l-1.5 7.4a.5.5 0 00.9.37L20 11.03a1 1 0 00-.78-1.63H14l1-7.07a.5.5 0 00-.9-.37L13 2z" />
+    </svg>
+  );
+
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-30 px-4 py-3 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold shadow-lg"
+        className="fixed bottom-6 right-6 z-30 flex items-center gap-2 pl-3 pr-4 py-3 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold shadow-lg"
       >
-        ⚡ God Mode
+        <BoltIcon className="w-4 h-4" />
+        God Mode
       </button>
       {open && (
         <div className="fixed inset-0 z-40">
@@ -57,7 +69,10 @@ export function GodModePanel() {
           />
           <aside className="absolute top-0 right-0 h-full w-[420px] bg-zinc-950/95 backdrop-blur border-l border-white/20 overflow-y-auto p-4 text-white">
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-sm font-mono">⚡ God Mode</h2>
+              <h2 className="text-sm font-mono flex items-center gap-1.5">
+                <BoltIcon className="w-3.5 h-3.5 text-rose-400" />
+                God Mode
+              </h2>
               <button
                 onClick={() => setOpen(false)}
                 className="text-white/50 text-xs font-mono hover:text-white"

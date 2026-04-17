@@ -129,7 +129,7 @@ export function StudentTimeline({
       <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-2 p-3 min-h-0">
         {active && incidents.length === 0 && (
           <div className="text-white/40 text-sm self-center font-mono w-full text-center">
-            No observations yet for {active} — try ⚡ God Mode → Inject Note.
+            No observations yet for {active} — try God Mode → Inject Note.
           </div>
         )}
         {[...incidents].reverse().map((inc) => {

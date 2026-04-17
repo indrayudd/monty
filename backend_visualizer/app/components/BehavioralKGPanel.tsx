@@ -170,6 +170,8 @@ export function BehavioralKGPanel({
         graphData={data}
         nodeRelSize={4}
         backgroundColor="rgba(9,9,11,0)"
+        cooldownTicks={100}
+        d3AlphaDecay={0.05}
         linkWidth={(l: unknown) => (l as { width: number }).width}
         linkColor={(l: unknown) => (l as { color: string }).color}
         linkDirectionalArrowLength={3}

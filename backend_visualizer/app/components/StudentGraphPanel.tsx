@@ -39,7 +39,18 @@ export function StudentGraphPanel({
   >({});
   const [degraded, setDegraded] = useState(false);
 
+  // Preserve node identity across polls so force layout keeps positions.
+  // Cleared when studentName changes (below) so each student gets a fresh layout.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodeObjRef = useRef<Map<string, any>>(new Map());
+
   useEffect(() => {
+    // Reset cached state when switching students so the previous student's
+    // data/layout doesn't bleed into the new one.
+    setIncidents([]);
+    setBehavioralIndex({});
+    nodeObjRef.current = new Map();
+
     let stop = false;
     const tick = async () => {
       try {
@@ -64,10 +75,6 @@ export function StudentGraphPanel({
       clearInterval(i);
     };
   }, [studentName]);
-
-  // Preserve node identity across polls so force layout keeps positions.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nodeObjRef = useRef<Map<string, any>>(new Map());
 
   const data = useMemo(() => {
     // How many of this student's incidents touched each behavioral ref
@@ -156,15 +163,18 @@ export function StudentGraphPanel({
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-center text-white/40 font-mono text-xs max-w-sm px-4">
             No behavioral nodes touched by {studentName} yet. Wait for the
-            agent loop to process incoming notes, or inject a few via ⚡ God
+            agent loop to process incoming notes, or inject a few via God
             Mode.
           </div>
         </div>
       )}
       <ForceGraph2D
+        key={studentName}
         graphData={data}
         nodeRelSize={4}
         backgroundColor="rgba(9,9,11,0)"
+        cooldownTicks={100}
+        d3AlphaDecay={0.05}
         linkWidth={(l: unknown) => (l as { width: number }).width}
         linkColor={(l: unknown) => (l as { color: string }).color}
         nodeCanvasObject={(

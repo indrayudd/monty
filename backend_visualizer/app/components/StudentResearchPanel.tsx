@@ -57,7 +57,7 @@ export function StudentResearchPanel({ studentName }: { studentName: string }) {
         <div className="text-white/40 font-mono text-xs py-4">
           No research fetched for {studentName} yet. The curiosity gate fires
           when behavioral nodes accumulate enough support_count + students_count
-          to cross threshold 0.70. You can also force it via ⚡ God Mode →
+          to cross threshold 0.70. You can also force it via God Mode →
           Manual research trigger.
         </div>
       )}
