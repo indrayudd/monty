@@ -129,9 +129,24 @@ export function GodModePanel() {
             </div>
             <button
               onClick={async () => { const r = await api.wikiReindex(); alert(`Reindexed: ${JSON.stringify(r)}`); }}
-              className="mt-2 w-full px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70"
+              className="mt-2 w-full px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 font-mono"
             >
               Reindex wiki (full rebuild)
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm("PURGE ALL data? This truncates every table and wipes all wiki content except personas. The streamer + agent loop will rebuild from scratch.")) return;
+                try {
+                  const r = await api.purge();
+                  alert(r.message || "Purged.");
+                  window.location.reload();
+                } catch (e) {
+                  alert("Purge failed: " + String(e));
+                }
+              }}
+              className="mt-2 w-full px-3 py-2 rounded bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-xs text-rose-300 font-mono"
+            >
+              Purge everything (fresh start)
             </button>
           </aside>
         </div>

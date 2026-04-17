@@ -40,6 +40,7 @@ export function StudentGraphPanel({
     Record<string, BehavioralNode>
   >({});
   const [degraded, setDegraded] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Preserve node identity across polls AND across student switches so the
   // force layout keeps positions for shared nodes. Unreferenced nodes drop
@@ -206,11 +207,24 @@ export function StudentGraphPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = isHighlighted ? "white" : n.color;
           ctx.fill();
-          if (globalScale > 1.4) {
-            ctx.fillStyle = "rgba(255,255,255,0.9)";
-            ctx.font = `${Math.max(9, 11 / globalScale * 3)}px sans-serif`;
-            ctx.fillText(n.name, n.x + r + 3, n.y + 3);
+          // Label only on hover or selected — no zoom-based label spam.
+          if (n.id === hoveredId || isHighlighted) {
+            const fontSize = Math.max(11, 14 / globalScale * 3);
+            ctx.fillStyle = "rgba(255,255,255,0.95)";
+            ctx.font = `${fontSize}px sans-serif`;
+            ctx.fillText(n.name, n.x + r + 3, n.y + 4);
           }
+        }}
+        onNodeHover={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setHoveredId((node as any)?.id || null);
+        }}
+        onEngineStop={() => {
+          // Auto-zoom to fit all nodes when simulation settles (fixes the
+          // "student graph spawns below viewport" issue).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fg = fgRef.current as any;
+          if (fg?.zoomToFit) fg.zoomToFit(400, 30);
         }}
         onNodeClick={(node: unknown) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -139,4 +139,6 @@ export const api = {
   demoStart: () => post<Record<string, unknown>>("/api/demo/start"),
   demoStop: () => post<Record<string, unknown>>("/api/demo/stop"),
   demoReset: () => post<Record<string, unknown>>("/api/demo/reset"),
+  purge: () =>
+    post<{ status: string; message: string }>("/api/admin/purge"),
 };

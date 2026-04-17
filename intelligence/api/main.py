@@ -362,3 +362,53 @@ def wiki_reindex():
         return full_rebuild()
     except NotImplementedError:
         raise HTTPException(503, "wiki_indexer.full_rebuild not yet implemented (Phase 2)")
+
+
+@app.post("/api/admin/purge")
+def admin_purge():
+    """Nuclear option: wipe all DB state + wiki generated content. Keeps personas + skeleton."""
+    import shutil
+    from intelligence.api.services.wiki_paths import WIKI_ROOT, BEHAVIORAL_TYPES
+    from intelligence.api.services.ghost_client import _conn, _notes_db_url, _agent_db_url
+
+    # 1. Truncate all data tables
+    with _conn(_notes_db_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE ingested_observations RESTART IDENTITY CASCADE")
+            conn.commit()
+    with _conn(_agent_db_url()) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "TRUNCATE behavioral_nodes, behavioral_edges, student_incidents, "
+                "student_profiles_index, curiosity_events, student_profiles, "
+                "profile_snapshots, student_literature, student_alerts, "
+                "agent_actions, agent_runtime_state RESTART IDENTITY CASCADE"
+            )
+            conn.commit()
+
+    # 2. Wipe wiki generated content (keep skeleton + personas)
+    for bt in BEHAVIORAL_TYPES:
+        d = WIKI_ROOT / "behavioral" / bt
+        for f in d.glob("*.md"):
+            f.unlink()
+    edges_dir = WIKI_ROOT / "behavioral" / "_edges"
+    for f in edges_dir.glob("*.md"):
+        f.unlink()
+    for sdir in (WIKI_ROOT / "students").iterdir():
+        if sdir.is_dir():
+            for f in sdir.rglob("*.md"):
+                f.unlink()
+            inc_dir = sdir / "incidents"
+            if inc_dir.exists():
+                shutil.rmtree(inc_dir)
+    for f in (WIKI_ROOT / "sources" / "openalex").glob("*.md"):
+        f.unlink()
+
+    # 3. Reset index/log to skeleton state
+    import subprocess
+    subprocess.run(
+        ["git", "checkout", "--", "wiki/log.md", "wiki/index.md", "wiki/behavioral/_index.md"],
+        cwd=str(WIKI_ROOT.parent), capture_output=True,
+    )
+
+    return {"status": "purged", "message": "All data tables truncated. Wiki generated content removed. Personas and skeleton preserved."}

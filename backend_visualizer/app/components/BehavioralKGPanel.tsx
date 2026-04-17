@@ -49,6 +49,7 @@ export function BehavioralKGPanel({
   const [edges, setEdges] = useState<BehavioralEdge[]>([]);
   const [minSupport, setMinSupport] = useState(2);
   const [degraded, setDegraded] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const fgRef = useRef<unknown>(null);
   // Preserve node object identity across polls so the force layout keeps x/y
   // positions instead of re-initializing every 2s (the "singularity explosion").
@@ -231,11 +232,22 @@ export function BehavioralKGPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = n.color;
           ctx.fill();
-          if (globalScale > 1.6) {
-            ctx.fillStyle = "white";
-            ctx.font = `${(10 / globalScale) * 4}px sans-serif`;
-            ctx.fillText(n.name, n.x + r + 2, n.y + 3);
+          // Label only for hovered or selected node — avoids clutter at zoom.
+          if (n.id === hoveredId || n.id === selectedSlug) {
+            const fontSize = Math.max(11, 14 / globalScale * 3);
+            ctx.fillStyle = "rgba(255,255,255,0.95)";
+            ctx.font = `${fontSize}px sans-serif`;
+            ctx.fillText(n.name, n.x + r + 3, n.y + 4);
           }
+        }}
+        onNodeHover={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          setHoveredId((node as any)?.id || null);
+        }}
+        onEngineStop={() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fg = fgRef.current as any;
+          if (fg?.zoomToFit) fg.zoomToFit(400, 40);
         }}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onNodeClick={(node: any) =>
