@@ -4,11 +4,11 @@ import { api, type StudentIncident, type Persona } from "../lib/api";
 import { StudentGraphPanel } from "./StudentGraphPanel";
 import { StudentResearchPanel } from "./StudentResearchPanel";
 
-const SEVERITY_COLORS: Record<string, string> = {
-  red: "bg-rose-500",
-  yellow: "bg-amber-400",
-  green: "bg-emerald-500",
-  "": "bg-zinc-600",
+const SEVERITY_BORDER: Record<string, string> = {
+  red: "border-l-rose-500",
+  yellow: "border-l-amber-400",
+  green: "border-l-emerald-500",
+  "": "border-l-zinc-600",
 };
 
 type View = "timeline" | "graph" | "research";
@@ -169,22 +169,25 @@ export function StudentTimeline({
             <button
               key={inc.id}
               onClick={() => onOpenIncident(inc)}
-              className={`shrink-0 w-56 text-left p-3 rounded border transition ${
+              className={`shrink-0 w-56 text-left p-3 rounded border-l-4 border border-white/10 transition ${
+                SEVERITY_BORDER[inc.severity || ""] || "border-l-zinc-600"
+              } ${
                 highlighted
-                  ? "border-white shadow-[0_0_12px_rgba(255,255,255,0.5)]"
-                  : "border-white/10 hover:border-white/30"
+                  ? "border-r-white border-t-white border-b-white shadow-[0_0_12px_rgba(255,255,255,0.5)]"
+                  : "hover:border-r-white/30 hover:border-t-white/30 hover:border-b-white/30"
               } bg-zinc-900`}
             >
-              <div className="flex items-center justify-between font-mono text-[10px] text-white/50">
-                <span>{ago}</span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    SEVERITY_COLORS[inc.severity || ""] || "bg-zinc-600"
-                  }`}
-                />
+              <div className="font-mono text-[10px] text-white/50 mb-1">
+                {ago}
               </div>
-              <div className="mt-2 text-xs text-white/80 font-mono">
-                note #{inc.note_id}
+              <div className="text-xs text-white font-semibold truncate">
+                note #{inc.note_id} — {inc.student_name}
+              </div>
+              <div className="mt-1 text-[11px] text-white/60 line-clamp-2 leading-snug">
+                {inc.behavioral_ref_slugs
+                  .slice(0, 3)
+                  .map((s) => s.split("/").slice(-2, -1)[0] || s)
+                  .join(", ")}
               </div>
               <div className="mt-2 flex flex-wrap gap-1">
                 {inc.behavioral_ref_slugs.slice(0, 6).map((s) => (
