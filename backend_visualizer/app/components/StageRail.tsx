@@ -14,14 +14,20 @@ const STAGES = [
 
 export function StageRail() {
   const [stage, setStage] = useState<string>("waiting_for_note");
+  const [student, setStudent] = useState<string>("");
 
   useEffect(() => {
     const tick = async () => {
       try {
+        // Read from /api/agent/status which reflects the real agent_runtime_state
+        // rows written by the agent loop — works whether the demo was "started"
+        // via God Mode or the loop was launched from CLI.
         const o = (await api.demoOverview()) as {
-          runtime?: { current_stage?: string };
+          runtime?: Record<string, string>;
         };
-        setStage(o?.runtime?.current_stage || "waiting_for_note");
+        const rt = o?.runtime || {};
+        setStage(rt.current_stage || "waiting_for_note");
+        setStudent(rt.current_student || "");
       } catch {
         /* keep last */
       }
@@ -58,7 +64,10 @@ export function StageRail() {
                     : "bg-zinc-700"
               }`}
             />
-            <span className="whitespace-nowrap">{s.replace(/_/g, " ")}</span>
+            <span className="whitespace-nowrap">
+              {s.replace(/_/g, " ")}
+              {active && student ? ` · ${student}` : ""}
+            </span>
             {idx < STAGES.length - 1 && (
               <span className="mx-1 text-white/10">›</span>
             )}
