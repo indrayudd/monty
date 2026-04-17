@@ -82,6 +82,7 @@ def index_behavioral_edge(file_path: Path) -> None:
     meta = post.metadata
     src_full = meta.get("src_slug", "")
     dst_full = meta.get("dst_slug", "")
+    source = meta.get("source", "observation")
 
     conn = _conn()
     try:
@@ -92,14 +93,15 @@ def index_behavioral_edge(file_path: Path) -> None:
                 src_slug, rel, dst_slug,
                 support_count, students_count,
                 first_observed_at, last_observed_at,
-                file_path
+                file_path, source
             )
-            VALUES (?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?)
             ON CONFLICT (src_slug, rel, dst_slug) DO UPDATE SET
                 support_count = EXCLUDED.support_count,
                 students_count = EXCLUDED.students_count,
                 last_observed_at = EXCLUDED.last_observed_at,
-                file_path = EXCLUDED.file_path
+                file_path = EXCLUDED.file_path,
+                source = EXCLUDED.source
             """,
             (
                 src_full, meta.get("rel"), dst_full,
@@ -108,6 +110,7 @@ def index_behavioral_edge(file_path: Path) -> None:
                 meta.get("first_observed_at"),
                 meta.get("last_observed_at"),
                 str(file_path.relative_to(WIKI_ROOT)),
+                source,
             ),
         )
         conn.commit()

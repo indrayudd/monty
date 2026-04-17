@@ -283,6 +283,23 @@ def persona_next_note(payload: NextNoteRequest):
         raise HTTPException(503, "persona_engine not yet implemented (Phase 1)")
 
 
+@app.get("/api/runtime/research-edges")
+def research_edges():
+    """Return recent research edge discovery checks."""
+    from intelligence.api.services.ghost_client import _fetchall
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT slug_a, slug_b, checked_at, found_connection "
+            "FROM research_edge_checks ORDER BY checked_at DESC LIMIT 50"
+        )
+        rows = _fetchall(cur)
+    finally:
+        conn.close()
+    return {"checks": rows}
+
+
 @app.get("/api/curiosity/events")
 def curiosity_events_endpoint(limit: int = 50):
     return {"events": list_curiosity_events(limit=limit)}
@@ -440,6 +457,7 @@ def admin_purge():
             "student_alerts",
             "agent_actions",
             "agent_runtime_state",
+            "research_edge_checks",
         ]:
             cur.execute(f"DELETE FROM {table}")
         conn.commit()

@@ -4,6 +4,7 @@ import argparse
 import time
 
 from intelligence.api.services.ghost_client import ensure_agent_tables
+from intelligence.api.services.kg_agent import discover_research_edges
 from intelligence.api.services.self_improve import run_agent_cycle
 
 
@@ -35,6 +36,22 @@ def main(argv: list[str] | None = None) -> int:
             f"knowledge+={summary['new_knowledge_nodes']} "
             f"open_alerts={summary['alerts_open']}"
         )
+
+        # Idle-time research edge discovery: when no new notes arrived,
+        # proactively search for research-backed connections between
+        # well-supported but disconnected behavioral nodes.
+        if summary["new_notes"] == 0:
+            try:
+                research_result = discover_research_edges(verbose=args.verbose, max_pairs=2)
+                print(
+                    "[agent-loop] idle research-edges: "
+                    f"checked={research_result['pairs_checked']} "
+                    f"created={research_result['edges_created']} "
+                    f"papers={research_result['papers_fetched']}"
+                )
+            except Exception as exc:
+                print(f"[agent-loop] research-edges error: {exc}")
+
         first_pass = False
 
         if args.single_shot:

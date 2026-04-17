@@ -237,6 +237,22 @@ def ensure_agent_tables() -> None:
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS research_edge_checks (
+                slug_a TEXT NOT NULL,
+                slug_b TEXT NOT NULL,
+                checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                found_connection BOOLEAN,
+                PRIMARY KEY (slug_a, slug_b)
+            )
+            """
+        )
+        # Add source column to behavioral_edges if missing
+        try:
+            cur.execute("ALTER TABLE behavioral_edges ADD COLUMN source TEXT DEFAULT 'observation'")
+        except Exception:
+            pass  # Column already exists
         conn.commit()
     finally:
         conn.close()
@@ -922,6 +938,7 @@ def reset_agent_state() -> None:
             "student_incidents",
             "student_profiles_index",
             "curiosity_events",
+            "research_edge_checks",
         ]:
             cur.execute(f"DELETE FROM {table};")
         conn.commit()
@@ -954,7 +971,7 @@ def list_behavioral_edges(min_support: int = 1) -> list[dict]:
         cur = conn.cursor()
         cur.execute(
             "SELECT src_slug, rel, dst_slug, support_count, students_count, "
-            "first_observed_at, last_observed_at "
+            "first_observed_at, last_observed_at, source "
             "FROM behavioral_edges WHERE support_count >= ?",
             (min_support,),
         )

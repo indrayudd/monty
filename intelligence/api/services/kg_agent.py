@@ -387,6 +387,217 @@ def enrich_student_knowledge(
     }
 
 
+def _pluralize_type(node_type: str) -> str:
+    """Convert singular node type to plural for edge slug prefix."""
+    if node_type.endswith("s"):
+        return node_type
+    return node_type + "s"
+
+
+def discover_research_edges(verbose: bool = False, max_pairs: int = 3) -> dict:
+    """Proactively discover research-backed edges between well-supported but
+    disconnected behavioral nodes. Called during idle cycles."""
+    result = {"pairs_checked": 0, "edges_created": 0, "papers_fetched": 0}
+
+    client = _openalex_client()
+    if client is None:
+        if verbose:
+            print("[research-edges] OPENALEX_API_KEY not set, skipping", flush=True)
+        return result
+
+    # Ensure the research_edge_checks table exists
+    from intelligence.api.services.ghost_client import ensure_agent_tables
+    ensure_agent_tables()
+
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        # Find candidate pairs: well-supported nodes of different types with no
+        # existing edge and not recently checked.
+        # behavioral_edges stores type-prefixed slugs (e.g. "antecedents/peer-disruption")
+        # while behavioral_nodes stores bare slugs (e.g. "peer-disruption") with a
+        # separate type column (singular, e.g. "antecedent").
+        cur.execute(
+            """
+            SELECT
+                a.slug AS slug_a, a.type AS type_a, a.title AS title_a, a.support_count AS sc_a,
+                b.slug AS slug_b, b.type AS type_b, b.title AS title_b, b.support_count AS sc_b
+            FROM behavioral_nodes a
+            JOIN behavioral_nodes b ON a.slug < b.slug AND a.type != b.type
+            WHERE a.support_count >= 5 AND b.support_count >= 5
+              -- No existing edge in either direction (account for plural prefix)
+              AND NOT EXISTS (
+                SELECT 1 FROM behavioral_edges e
+                WHERE (
+                  (e.src_slug = (CASE WHEN a.type LIKE '%s' THEN a.type ELSE a.type || 's' END) || '/' || a.slug
+                   AND e.dst_slug = (CASE WHEN b.type LIKE '%s' THEN b.type ELSE b.type || 's' END) || '/' || b.slug)
+                  OR
+                  (e.src_slug = (CASE WHEN b.type LIKE '%s' THEN b.type ELSE b.type || 's' END) || '/' || b.slug
+                   AND e.dst_slug = (CASE WHEN a.type LIKE '%s' THEN a.type ELSE a.type || 's' END) || '/' || a.slug)
+                )
+              )
+              -- Not checked within the last 24 hours
+              AND NOT EXISTS (
+                SELECT 1 FROM research_edge_checks rc
+                WHERE rc.slug_a = a.slug AND rc.slug_b = b.slug
+                  AND rc.checked_at > datetime('now', '-24 hours')
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM research_edge_checks rc
+                WHERE rc.slug_a = b.slug AND rc.slug_b = a.slug
+                  AND rc.checked_at > datetime('now', '-24 hours')
+              )
+            ORDER BY (a.support_count + b.support_count) DESC
+            LIMIT ?
+            """,
+            (max_pairs,),
+        )
+        pairs = _fetchall(cur)
+    finally:
+        conn.close()
+
+    if verbose:
+        print(f"[research-edges] found {len(pairs)} candidate pair(s) to investigate", flush=True)
+
+    for pair in pairs:
+        slug_a = pair["slug_a"]
+        slug_b = pair["slug_b"]
+        type_a = pair["type_a"]
+        type_b = pair["type_b"]
+        title_a = pair["title_a"]
+        title_b = pair["title_b"]
+
+        query_str = f"toddler preschool Montessori {title_a} {title_b} relationship"
+        if verbose:
+            print(f"[research-edges] searching: {query_str}", flush=True)
+
+        try:
+            search_resp = client.search_works(
+                topic_query=query_str,
+                per_page=3,
+                extra_filter=OPENALEX_FILTER,
+                select=OPENALEX_SELECT,
+            )
+        except Exception as exc:
+            _log.warning("OpenAlex search failed for pair %s/%s: %s", slug_a, slug_b, exc)
+            # Record the check so we don't retry immediately
+            _record_edge_check(slug_a, slug_b, found=False)
+            result["pairs_checked"] += 1
+            continue
+
+        candidates = search_resp.get("results", [])
+        if verbose:
+            print(f"[research-edges] OpenAlex returned {len(candidates)} result(s)", flush=True)
+
+        found_connection = False
+        for work in candidates[:3]:
+            meta = extract_basic_metadata(work)
+            openalex_id = meta.get("openalex_id", "")
+            if not openalex_id:
+                continue
+
+            abstract = extract_abstract_text(work)
+            title = meta.get("title") or "Untitled"
+            context_text = f"{title_a} and {title_b} relationship in early childhood"
+
+            summary = summarize_research_work(
+                student_name="Shared KG",
+                query=query_str,
+                title=title,
+                abstract=abstract,
+                context=context_text,
+            )
+            result["papers_fetched"] += 1
+
+            # Check if the summary mentions both concepts and suggests a relationship
+            relevance = summary.get("relevance", "")
+            insights = summary.get("insights", [])
+            combined_text = f"{relevance} {' '.join(str(i) for i in insights)}".lower()
+            mentions_a = title_a.lower().split()[0] in combined_text if title_a else False
+            mentions_b = title_b.lower().split()[0] in combined_text if title_b else False
+
+            if mentions_a and mentions_b:
+                found_connection = True
+                if verbose:
+                    print(
+                        f"[research-edges] connection found: {slug_a} <-> {slug_b} via '{title}'",
+                        flush=True,
+                    )
+
+                # Create the research edge via wiki_writer
+                from intelligence.api.services.wiki_writer import upsert_behavioral_edge
+                evidence = f"[RESEARCH] {title} (OpenAlex {openalex_id}): {'; '.join(str(i) for i in insights[:2])}"
+                edge_result = upsert_behavioral_edge(
+                    src_type=_pluralize_type(type_a),
+                    src_slug=slug_a,
+                    rel="research_links",
+                    dst_type=_pluralize_type(type_b),
+                    dst_slug=slug_b,
+                    new_evidence=evidence,
+                    new_student_name=None,
+                )
+
+                # Add source: research to the edge frontmatter
+                try:
+                    from intelligence.api.services.wiki_paths import behavioral_edge_path
+                    edge_path = behavioral_edge_path(
+                        _pluralize_type(type_a), slug_a,
+                        "research_links",
+                        _pluralize_type(type_b), slug_b,
+                    )
+                    if edge_path.exists():
+                        post = _fm.load(edge_path)
+                        post.metadata["source"] = "research"
+                        edge_path.write_text(
+                            _fm.dumps(post) + ("\n" if not _fm.dumps(post).endswith("\n") else ""),
+                            encoding="utf-8",
+                        )
+                        # Re-index with source field
+                        from intelligence.api.services.wiki_indexer import index_behavioral_edge
+                        index_behavioral_edge(edge_path)
+                except Exception as exc:
+                    _log.warning("Failed to add source:research to edge frontmatter: %s", exc)
+
+                # Write paper page
+                try:
+                    _write_paper_page(meta, abstract, summary, query_str, None)
+                except Exception as exc:
+                    _log.warning("Failed to write paper page: %s", exc)
+
+                result["edges_created"] += 1
+                break  # One connection per pair is enough
+
+        _record_edge_check(slug_a, slug_b, found=found_connection)
+        result["pairs_checked"] += 1
+
+    if verbose:
+        print(f"[research-edges] done: {result}", flush=True)
+    return result
+
+
+def _record_edge_check(slug_a: str, slug_b: str, found: bool) -> None:
+    """Record that a pair was checked in the cooldown table."""
+    # Normalize order so (a,b) and (b,a) map to the same row
+    if slug_a > slug_b:
+        slug_a, slug_b = slug_b, slug_a
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO research_edge_checks (slug_a, slug_b, found_connection)
+            VALUES (?, ?, ?)
+            ON CONFLICT (slug_a, slug_b) DO UPDATE SET
+                checked_at = CURRENT_TIMESTAMP,
+                found_connection = EXCLUDED.found_connection
+            """,
+            (slug_a, slug_b, found),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def query_knowledge_graph(query: str, context: dict[str, Any] | None = None) -> dict:
     context_text = _normalize_context(context)
     student_name = None
