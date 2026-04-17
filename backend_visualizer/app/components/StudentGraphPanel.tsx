@@ -171,6 +171,7 @@ export function StudentGraphPanel({
         nodeRelSize={4}
         nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"
+        warmupTicks={80}
         cooldownTicks={60}
         d3AlphaDecay={0.1}
         d3VelocityDecay={0.55}
