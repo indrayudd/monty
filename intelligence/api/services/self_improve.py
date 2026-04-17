@@ -333,18 +333,18 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                 )
 
         emergency_terms = detect_emergency_terms(student_new_notes)
-        # existing_knowledge previously queried legacy knowledge_graph table (dropped Phase 5b).
-        # Behavioral KG now lives in wiki/behavioral/ + behavioral_nodes index. kg_agent's
-        # enrich_student_knowledge reads it directly; curiosity gate is the primary trigger.
-        existing_knowledge: list[dict] = []
         if verbose:
             print(
                 f"[agent-cycle][knowledge] {student_name}: "
                 f"emergency_terms={emergency_terms}",
                 flush=True,
             )
-        knowledge_payload = {"results": existing_knowledge, "new_nodes_created": 0, "queries": []}
-        if emergency_terms:
+        # Always call enrich_student_knowledge — the curiosity gate INSIDE it
+        # decides whether to actually fetch from OpenAlex (score >= 0.70 + cooldown).
+        # evaluate_gate also writes curiosity_events rows on every call, which
+        # populates the /console curiosity stream.
+        knowledge_payload = {"results": [], "new_nodes_created": 0, "queries": []}
+        if True:
             _set_stage(
                 "enriching_knowledge",
                 student_name=student_name,
