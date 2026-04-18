@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from intelligence.api.services.demo_runtime import bootstrap_demo, get_demo_overview, reset_demo, start_demo, stop_demo
@@ -432,6 +433,29 @@ def wiki_reindex():
         return full_rebuild()
     except NotImplementedError:
         raise HTTPException(503, "wiki_indexer.full_rebuild not yet implemented (Phase 2)")
+
+
+class ChatRequest(BaseModel):
+    question: str
+    history: list[dict] | None = None
+    current_page_path: str | None = None
+    selected_text: str | None = None
+
+
+@app.post("/api/chat")
+def chat(request: ChatRequest):
+    from intelligence.api.services.chat_service import stream_chat
+
+    def generate():
+        for chunk in stream_chat(
+            question=request.question,
+            history=request.history,
+            current_page_path=request.current_page_path,
+            selected_text=request.selected_text,
+        ):
+            yield chunk
+
+    return StreamingResponse(generate(), media_type="text/plain")
 
 
 @app.post("/api/admin/purge")

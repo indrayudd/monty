@@ -147,7 +147,7 @@ def stream_chat(
             model="gpt-5.4-nano",
             messages=messages,
             temperature=0.3,
-            max_tokens=800,
+            max_completion_tokens=800,
             stream=True,
         )
         for chunk in stream:
