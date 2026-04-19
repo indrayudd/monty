@@ -25,6 +25,7 @@ from intelligence.api.services.ghost_client import (
     list_curiosity_events,
     get_runtime_overrides,
     set_runtime_overrides,
+    set_runtime_values,
 )
 from intelligence.api.services.kg_agent import query_knowledge_graph
 from intelligence.api.services.self_improve import run_agent_cycle
@@ -412,6 +413,26 @@ def resume_streamer():
     overrides["_paused"] = False
     set_runtime_overrides(overrides)
     return {"paused": False}
+
+
+@app.post("/api/runtime/agent-pause")
+def pause_agent():
+    overrides = get_runtime_overrides()
+    overrides["_agent_paused"] = True
+    set_runtime_overrides(overrides)
+    set_runtime_values({"current_stage": "agent_paused", "stage_message": "Agent paused by operator."})
+    return {"agent_paused": True}
+
+
+@app.post("/api/runtime/agent-resume")
+def resume_agent():
+    overrides = get_runtime_overrides()
+    overrides["_agent_paused"] = False
+    set_runtime_overrides(overrides)
+    set_runtime_values({"current_stage": "waiting_for_note", "stage_message": "Agent resumed."})
+    return {"agent_paused": False}
+
+
 
 
 @app.get("/api/notes/recent")

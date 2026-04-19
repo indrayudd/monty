@@ -49,9 +49,9 @@ export function BehavioralKGPanel({
   const [minSupport, setMinSupport] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("monty_minSupport");
-      return saved ? parseInt(saved) : 2;
+      return saved ? parseInt(saved) : 1;
     }
-    return 2;
+    return 1;
   });
   const [edgeFilter, setEdgeFilter] = useState<"all" | "observation" | "research">(() => {
     if (typeof window !== "undefined") {

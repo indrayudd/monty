@@ -146,6 +146,8 @@ export const api = {
     post<{ status: string; message: string }>("/api/admin/purge"),
   pauseStreamer: () => post<{ paused: boolean }>("/api/runtime/pause"),
   resumeStreamer: () => post<{ paused: boolean }>("/api/runtime/resume"),
+  pauseAgent: () => post<{ agent_paused: boolean }>("/api/runtime/agent-pause"),
+  resumeAgent: () => post<{ agent_paused: boolean }>("/api/runtime/agent-resume"),
   recentNotes: (limit = 5) =>
     get<{ notes: { id: number; name: string; body: string; inserted_at: string }[] }>(
       `/api/notes/recent?limit=${limit}`,

@@ -414,7 +414,7 @@ def _pluralize_type(node_type: str) -> str:
     return node_type + "s"
 
 
-def discover_research_edges(verbose: bool = False, max_pairs: int = 3) -> dict:
+def discover_research_edges(verbose: bool = False, max_pairs: int = 3, min_node_support: int = 5) -> dict:
     """Proactively discover research-backed edges between well-supported but
     disconnected behavioral nodes. Called during idle cycles."""
     result = {"pairs_checked": 0, "edges_created": 0, "papers_fetched": 0}
@@ -444,7 +444,7 @@ def discover_research_edges(verbose: bool = False, max_pairs: int = 3) -> dict:
                 b.slug AS slug_b, b.type AS type_b, b.title AS title_b, b.support_count AS sc_b
             FROM behavioral_nodes a
             JOIN behavioral_nodes b ON a.slug < b.slug AND a.type != b.type
-            WHERE a.support_count >= 5 AND b.support_count >= 5
+            WHERE a.support_count >= ? AND b.support_count >= ?
               -- No existing edge in either direction (account for plural prefix)
               AND NOT EXISTS (
                 SELECT 1 FROM behavioral_edges e
@@ -470,7 +470,7 @@ def discover_research_edges(verbose: bool = False, max_pairs: int = 3) -> dict:
             ORDER BY (a.support_count + b.support_count) DESC
             LIMIT ?
             """,
-            (max_pairs,),
+            (min_node_support, min_node_support, max_pairs),
         )
         pairs = _fetchall(cur)
     finally:

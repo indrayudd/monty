@@ -17,6 +17,7 @@ export default function GodModePage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
   const [streaming, setStreaming] = useState<boolean | null>(null);
+  const [agentRunning, setAgentRunning] = useState<boolean | null>(null);
 
   useEffect(() => {
     const tick = async () => {
@@ -25,8 +26,8 @@ export default function GodModePage() {
         setPersonas(r.personas || []);
         const ov = (r.overrides as Record<string, unknown>) || {};
         setOverrides(ov as Record<string, Override>);
-        // Sync streaming state from actual _paused flag (only on first load)
         setStreaming(prev => prev === null ? !ov._paused : prev);
+        setAgentRunning(prev => prev === null ? !ov._agent_paused : prev);
       } catch {
         /* keep */
       }
@@ -160,6 +161,39 @@ export default function GodModePage() {
             </button>
           </div>
           <NoteCadenceControl />
+        </div>
+
+        {/* 2.5. Agent Loop — pause/resume */}
+        <div className="border border-white/10 rounded p-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
+              Agent Loop
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  if (agentRunning) {
+                    await api.pauseAgent();
+                    setAgentRunning(false);
+                  } else {
+                    await api.resumeAgent();
+                    setAgentRunning(true);
+                  }
+                } catch {}
+              }}
+              disabled={agentRunning === null}
+              className={`px-4 py-1.5 rounded text-xs font-mono transition-colors ${
+                agentRunning
+                  ? "bg-rose-700 hover:bg-rose-600 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+              } disabled:opacity-30`}
+            >
+              {agentRunning ? "Pause" : "Resume"}
+            </button>
+          </div>
+          <div className="text-[9px] text-white/40 font-mono mt-1">
+            {agentRunning ? "Agent is processing notes and researching" : "Agent is on standby"}
+          </div>
         </div>
 
         {/* 3. Curiosity Presets */}

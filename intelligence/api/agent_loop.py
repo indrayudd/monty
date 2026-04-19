@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from intelligence.api.services.ghost_client import ensure_agent_tables, set_runtime_values
+from intelligence.api.services.ghost_client import ensure_agent_tables, get_runtime_overrides, set_runtime_values
 from intelligence.api.services.kg_agent import discover_research_edges
 from intelligence.api.services.self_improve import run_agent_cycle
 
@@ -27,7 +27,17 @@ def main(argv: list[str] | None = None) -> int:
     ensure_agent_tables()
 
     first_pass = True
+    research_cycle_count = 0
     while True:
+        # Check agent pause flag
+        try:
+            ov = get_runtime_overrides()
+            if ov.get("_agent_paused"):
+                time.sleep(2)
+                continue
+        except Exception:
+            pass
+
         summary = run_agent_cycle(force_full=args.force_full and first_pass, verbose=args.verbose)
         print(
             "[agent-loop] "
@@ -47,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
                     "current_student": "",
                     "stage_message": "Searching for research-backed connections between behavioral nodes.",
                 })
-                research_result = discover_research_edges(verbose=args.verbose, max_pairs=2)
+                # ~30% of research cycles explore lower-support nodes
+                research_cycle_count += 1
+                use_low_support = (research_cycle_count % 10) < 3
+                min_sup = 2 if use_low_support else 5
+                research_result = discover_research_edges(verbose=args.verbose, max_pairs=2, min_node_support=min_sup)
                 if research_result["edges_created"] > 0:
                     set_runtime_values({
                         "current_stage": "research_edge_found",
