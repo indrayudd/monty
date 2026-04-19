@@ -1,4 +1,6 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const BASE = typeof process.env.NEXT_PUBLIC_API_BASE_URL === "string"
+  ? process.env.NEXT_PUBLIC_API_BASE_URL
+  : "http://localhost:8000";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { cache: "no-store" });
@@ -152,4 +154,8 @@ export const api = {
     get<{ note_cadence: number }>("/api/runtime/note-cadence"),
   setNoteCadence: (cadence: number) =>
     patch<{ note_cadence: number }>("/api/runtime/note-cadence", { cadence }),
+  ingestionStats: () =>
+    get<{ total_notes: number; processed: number; backlog: number; stage: string; current_student: string; enrich_progress: string; enrich_query_progress: string }>(
+      "/api/ingestion-stats",
+    ),
 };

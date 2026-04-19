@@ -46,16 +46,25 @@ export function BehavioralKGPanel({
   selectedSlug: string | null;
   onSelectNode: (slug: string | null) => void;
 }) {
-  const [nodes, setNodes] = useState<BehavioralNode[]>([]);
-  const [edges, setEdges] = useState<BehavioralEdge[]>([]);
-  const [minSupport, setMinSupport] = useState(2);
+  const [minSupport, setMinSupport] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("monty_minSupport");
+      return saved ? parseInt(saved) : 2;
+    }
+    return 2;
+  });
+  const [edgeFilter, setEdgeFilter] = useState<"all" | "observation" | "research">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("monty_edgeFilter") as "all" | "observation" | "research") || "all";
+    }
+    return "all";
+  });
   const [degraded, setDegraded] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 400 });
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<unknown>(null);
 
-  // Measure actual container size so ForceGraph doesn't assume window height.
   const measureContainer = useCallback(() => {
     if (containerRef.current) {
       const { clientWidth, clientHeight } = containerRef.current;
@@ -71,15 +80,36 @@ export function BehavioralKGPanel({
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, [measureContainer]);
-  // Preserve node object identity across polls so the force layout keeps x/y
-  // positions instead of re-initializing every 2s (the "singularity explosion").
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodeObjRef = useRef<Map<string, any>>(new Map());
-  // Track previous structural state so we only trigger a force-graph reheat
-  // when nodes/edges are actually added or removed — not on every property poll.
   const prevNodeSlugsRef = useRef<Set<string>>(new Set());
   const prevEdgeKeysRef = useRef<Set<string>>(new Set());
+  const rawEdgesRef = useRef<BehavioralEdge[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
 
+  // Build links from current edges + filter + nodeMap
+  const buildLinks = useCallback((edgesArr: BehavioralEdge[], nodeMap: Map<string, unknown>) => {
+    return edgesArr
+      .filter((e) => {
+        if (edgeFilter === "research" && e.source !== "research") return false;
+        if (edgeFilter === "observation" && e.source === "research") return false;
+        const src = e.src_slug.split("/").pop()!;
+        const dst = e.dst_slug.split("/").pop()!;
+        return nodeMap.has(src) && nodeMap.has(dst);
+      })
+      .map((e) => ({
+        source: e.src_slug.split("/").pop()!,
+        target: e.dst_slug.split("/").pop()!,
+        width: Math.max(0.8, Math.log2(1 + e.support_count)),
+        color: e.source === "research" ? "rgba(255,255,255,0.6)" : (REL_COLORS[e.rel] || "#52525b"),
+        rel: e.rel,
+        edgeSource: e.source,
+      }));
+  }, [edgeFilter]);
+
+  // Poll API — only update React state on structural changes
   useEffect(() => {
     let stop = false;
     const tick = async () => {
@@ -89,93 +119,81 @@ export function BehavioralKGPanel({
 
         const newNodes = r.nodes || [];
         const newEdges = r.edges || [];
+        rawEdgesRef.current = newEdges;
+        const nodeMap = nodeObjRef.current;
 
-        // Always mutate existing node objects in place for property changes
-        // (support_count, curiosity_score, etc.). The canvas callback reads
-        // these on every frame, so visual updates happen without a reheat.
+        // Always mutate existing node properties in place (no re-render needed)
+        const newSlugs = new Set<string>();
+        let hasNewNodes = false;
         for (const n of newNodes) {
-          const existing = nodeObjRef.current.get(n.slug);
+          newSlugs.add(n.slug);
+          const existing = nodeMap.get(n.slug);
           if (existing) {
             existing.val = Math.max(2, Math.log2(1 + n.support_count) * 4);
             existing.curiosity = n.curiosity_score;
             existing.name = n.title || n.slug;
+            existing.type = n.type;
             existing.color = TYPE_COLORS[n.type] || "#6b7280";
+          } else {
+            // New node — place near a random existing neighbor for organic entry
+            const existingNodes = Array.from(nodeMap.values());
+            const neighbor = existingNodes.length > 0
+              ? existingNodes[Math.floor(Math.random() * existingNodes.length)]
+              : null;
+            nodeMap.set(n.slug, {
+              id: n.slug,
+              name: n.title || n.slug,
+              type: n.type,
+              val: Math.max(2, Math.log2(1 + n.support_count) * 4),
+              color: TYPE_COLORS[n.type] || "#6b7280",
+              curiosity: n.curiosity_score,
+              // Start near a neighbor with offset for organic fade-in
+              x: neighbor ? neighbor.x + (Math.random() - 0.5) * 60 : undefined,
+              y: neighbor ? neighbor.y + (Math.random() - 0.5) * 60 : undefined,
+              _enterTime: Date.now(),
+            });
+            hasNewNodes = true;
           }
         }
+        // Remove departed nodes
+        let hasRemovedNodes = false;
+        for (const key of nodeMap.keys()) {
+          if (!newSlugs.has(key)) { nodeMap.delete(key); hasRemovedNodes = true; }
+        }
 
-        // Check if the node SET or edge SET structurally changed.
-        const newSlugs = new Set(newNodes.map((n) => n.slug));
-        const newEdgeKeys = new Set(
-          newEdges.map((e) => `${e.src_slug}|${e.rel}|${e.dst_slug}`),
-        );
-        const structuralChange =
-          newSlugs.size !== prevNodeSlugsRef.current.size ||
+        // Check edge structural change
+        const newEdgeKeys = new Set(newEdges.map((e) => `${e.src_slug}|${e.rel}|${e.dst_slug}`));
+        const edgesChanged =
           newEdgeKeys.size !== prevEdgeKeysRef.current.size ||
-          [...newSlugs].some((s) => !prevNodeSlugsRef.current.has(s)) ||
           [...newEdgeKeys].some((k) => !prevEdgeKeysRef.current.has(k));
 
-        // Only update React state (→ useMemo → new graphData → simulation
-        // reheat) when something structural changed. Property-only polls
-        // are silent — no jitter, no reheat, dragging uninterrupted.
-        if (structuralChange) {
+        // Only update React state (→ new graphData → simulation reheat) on structural changes
+        if (hasNewNodes || hasRemovedNodes || edgesChanged ||
+            prevNodeSlugsRef.current.size === 0) {
           prevNodeSlugsRef.current = newSlugs;
           prevEdgeKeysRef.current = newEdgeKeys;
-          setNodes(newNodes);
-          setEdges(newEdges);
+          const links = buildLinks(newEdges, nodeMap);
+          setGraphData({ nodes: Array.from(nodeMap.values()), links });
         }
         setDegraded(false);
-      } catch (err) {
+      } catch {
         if (!stop) setDegraded(true);
       }
     };
     tick();
-    const i = setInterval(tick, 2000);
-    return () => {
-      stop = true;
-      clearInterval(i);
-    };
-  }, [minSupport]);
+    const i = setInterval(tick, 4000);
+    return () => { stop = true; clearInterval(i); };
+  }, [minSupport, buildLinks]);
 
-  const data = useMemo(() => {
-    // Reuse existing node objects (preserves x/y/vx/vy set by the layout)
-    // and mutate their properties in place when incoming support/curiosity change.
-    const prev = nodeObjRef.current;
-    const next = new Map<string, Record<string, unknown>>();
-    for (const n of nodes) {
-      const existing = prev.get(n.slug);
-      if (existing) {
-        existing.name = n.title || n.slug;
-        existing.type = n.type;
-        existing.val = Math.max(2, Math.log2(1 + n.support_count) * 4);
-        existing.color = TYPE_COLORS[n.type] || "#6b7280";
-        existing.curiosity = n.curiosity_score;
-        next.set(n.slug, existing);
-      } else {
-        next.set(n.slug, {
-          id: n.slug,
-          name: n.title || n.slug,
-          type: n.type,
-          val: Math.max(2, Math.log2(1 + n.support_count) * 4),
-          color: TYPE_COLORS[n.type] || "#6b7280",
-          curiosity: n.curiosity_score,
-        });
-      }
-    }
-    nodeObjRef.current = next;
-    return {
-      nodes: Array.from(next.values()),
-      links: edges.map((e) => ({
-        source: e.src_slug.split("/").pop()!,
-        target: e.dst_slug.split("/").pop()!,
-        width: Math.max(0.5, Math.log2(1 + e.support_count)),
-        color: e.source === "research" ? "rgba(255,255,255,0.12)" : (REL_COLORS[e.rel] || "#52525b"),
-        rel: e.rel,
-        edgeSource: e.source,
-      })),
-    };
-  }, [nodes, edges]);
+  // Rebuild links on edge filter change (no refetch needed)
+  useEffect(() => {
+    if (rawEdgesRef.current.length === 0) return;
+    const links = buildLinks(rawEdgesRef.current, nodeObjRef.current);
+    setGraphData((prev) => ({ nodes: prev.nodes, links }));
+  }, [edgeFilter, buildLinks]);
 
-  const isEmpty = nodes.length === 0;
+  const data = graphData;
+  const isEmpty = data.nodes.length === 0;
 
   return (
     <div ref={containerRef} className="relative h-full w-full bg-zinc-950 overflow-hidden">
@@ -205,13 +223,28 @@ export function BehavioralKGPanel({
           min={1}
           value={minSupport}
           onChange={(e) =>
-            setMinSupport(Math.max(1, parseInt(e.target.value || "1")))
+            { const v = Math.max(1, parseInt(e.target.value || "1")); setMinSupport(v); localStorage.setItem("monty_minSupport", String(v)); }
           }
           className="bg-zinc-800 px-2 py-0.5 w-12 rounded text-white"
         />
         <span className="ml-2 text-white/40">
-          {nodes.length}n · {edges.length}e
+          {data.nodes.length}n · {data.links.length}e
         </span>
+        <div className="ml-2 flex gap-0.5">
+          {(["all", "observation", "research"] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => { setEdgeFilter(f); localStorage.setItem("monty_edgeFilter", f); }}
+              className={`px-1.5 py-0.5 rounded text-[9px] transition-colors ${
+                edgeFilter === f
+                  ? f === "research" ? "bg-cyan-500/20 text-cyan-300" : "bg-white/15 text-white"
+                  : "text-white/30 hover:text-white/60"
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
       {degraded && (
         <div className="absolute top-14 left-2 z-10 text-[10px] text-amber-300/80 font-mono bg-amber-950/40 border border-amber-500/20 rounded px-2 py-1">
@@ -234,28 +267,39 @@ export function BehavioralKGPanel({
         nodeRelSize={4}
         nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"
-        warmupTicks={80}
-        cooldownTicks={60}
-        d3AlphaDecay={0.1}
-        d3VelocityDecay={0.55}
+        warmupTicks={40}
+        cooldownTicks={200}
+        cooldownTime={10000}
+        d3AlphaDecay={0.0228}
+        d3VelocityDecay={0.4}
+        enableNodeDrag={true}
+        onNodeDrag={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const n = node as any;
+          n.fx = n.x;
+          n.fy = n.y;
+        }}
+        onNodeDragEnd={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const n = node as any;
+          n.fx = undefined;
+          n.fy = undefined;
+        }}
         onEngineTick={() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const fg = fgRef.current as any;
           if (!fg || fg._montyForcesTuned) return;
-          // Tune forces once the engine is live. Isolated nodes were drifting
-          // under unchecked charge force (many-body repulsion) with no link
-          // force to balance them. Weaken charge, cap its distance, and add
-          // gentle forceX/forceY pulling toward center so isolated nodes stay
-          // within the viewport.
           if (fg.d3Force) {
+            // D3 defaults with forceX/Y for disjoint subgraphs
+            // (per Observable disjoint force-directed graph example)
             const charge = fg.d3Force("charge");
-            if (charge) charge.strength(-45).distanceMax(260);
-            fg.d3Force("x", forceX(0).strength(0.06));
-            fg.d3Force("y", forceY(0).strength(0.06));
+            if (charge) charge.strength(-30);
+            fg.d3Force("x", forceX());
+            fg.d3Force("y", forceY());
             fg._montyForcesTuned = true;
           }
         }}
-        linkWidth={(l: unknown) => (l as { width: number }).width}
+        linkWidth={(l: unknown) => Math.max(0.8, (l as { width: number }).width)}
         linkColor={(l: unknown) => (l as { color: string }).color}
         linkLineDash={(l: unknown) => (l as { edgeSource?: string }).edgeSource === "research" ? [4, 2] : null}
         linkDirectionalArrowLength={3}
@@ -268,6 +312,10 @@ export function BehavioralKGPanel({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const n = node as any;
           const r = n.val;
+          // Fade-in for new nodes: 0→1 over 800ms
+          const age = n._enterTime ? Date.now() - n._enterTime : 1000;
+          const opacity = Math.min(1, age / 100);
+          if (opacity < 1) ctx.globalAlpha = opacity;
           // halo
           if (n.curiosity >= 0.7) {
             // ~1.5 Hz pulse, opacity 0.15..0.45
@@ -304,6 +352,7 @@ export function BehavioralKGPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = n.id === hoveredId ? "#ffffff" : n.color;
           ctx.fill();
+          if (opacity < 1) ctx.globalAlpha = 1;
           // Labels are drawn in onRenderFramePost so they're always on top.
         }}
         onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -313,15 +362,17 @@ export function BehavioralKGPanel({
             const n = node as any;
             if (n.id === hoveredId || n.id === selectedSlug) {
               const r = n.val || 4;
-              const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
+              // Constant label size: 11px screen pixels regardless of zoom
+              const fontSize = 11 / globalScale;
               ctx.font = `${fontSize}px sans-serif`;
               const text = n.name || n.id;
               const textW = ctx.measureText(text).width;
-              const tx = n.x + r + 4;
-              const ty = n.y + 3;
+              const pad = 3 / globalScale;
+              const tx = n.x + r + pad;
+              const ty = n.y + pad;
               ctx.fillStyle = "rgba(0,0,0,0.8)";
               ctx.beginPath();
-              ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
+              ctx.roundRect(tx - pad, ty - fontSize + pad / 3, textW + pad * 2, fontSize + pad * 1.3, pad);
               ctx.fill();
               ctx.fillStyle = "rgba(255,255,255,0.95)";
               ctx.fillText(text, tx, ty);

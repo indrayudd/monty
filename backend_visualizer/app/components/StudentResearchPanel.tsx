@@ -7,10 +7,11 @@ type Paper = {
   title?: string;
   authors?: string | string[];
   publication_year?: number;
+  year?: number;
   cited_by_count?: number;
   landing_page_url?: string;
   relevance_summary?: string;
-  abstract?: string;
+  fetched_for_query?: string;
 };
 
 export function StudentResearchPanel({ studentName }: { studentName: string }) {
@@ -75,7 +76,7 @@ export function StudentResearchPanel({ studentName }: { studentName: string }) {
                 {p.title || "Untitled"}
               </h3>
               <span className="text-[10px] text-white/40 font-mono shrink-0">
-                {p.publication_year || "—"}
+                {p.publication_year || p.year || "—"}
                 {typeof p.cited_by_count === "number" && (
                   <>
                     {" · "}cited {p.cited_by_count}
@@ -86,9 +87,9 @@ export function StudentResearchPanel({ studentName }: { studentName: string }) {
             {authors && (
               <div className="text-xs text-white/60 mt-1 italic">{authors}</div>
             )}
-            {p.relevance_summary && (
+            {(p.relevance_summary || p.fetched_for_query) && (
               <div className="text-xs text-white/70 mt-2">
-                {p.relevance_summary}
+                {p.relevance_summary || `Query: ${p.fetched_for_query}`}
               </div>
             )}
             {p.landing_page_url && (

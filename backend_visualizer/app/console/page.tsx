@@ -3,6 +3,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { CuriosityEventsStream } from "../components/CuriosityEventsStream";
+import { IngestionWidget } from "../components/IngestionWidget";
+import { NotesPipelineWidget } from "../components/NotesPipelineWidget";
 import { StatusCards } from "../components/StatusCards";
 import { TraceLog } from "../components/TraceLog";
 
@@ -58,6 +60,12 @@ export default function ConsolePage() {
     <div className="h-[calc(100vh-3rem)] flex flex-col overflow-hidden">
       {/* Main scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Ingestion pipeline stats */}
+        <IngestionWidget />
+
+        {/* Notes pipeline */}
+        <NotesPipelineWidget />
+
         {/* Section 1: Status Cards */}
         <StatusCards />
 

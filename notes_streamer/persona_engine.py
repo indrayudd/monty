@@ -201,7 +201,7 @@ Name: {persona['name']}
             model="gpt-5.4-nano",
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             temperature=0.9,
-            max_tokens=400,
+            max_completion_tokens=400,
         )
         body = resp.choices[0].message.content.strip()
         if not body.startswith("Name:"):

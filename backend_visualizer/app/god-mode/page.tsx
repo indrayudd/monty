@@ -13,19 +13,20 @@ type Override = {
   activity_weight?: number;
 };
 
-type DemoStatus = "idle" | "running" | "stopped";
-
 export default function GodModePage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
-  const [demoStatus, setDemoStatus] = useState<DemoStatus>("idle");
+  const [streaming, setStreaming] = useState<boolean | null>(null);
 
   useEffect(() => {
     const tick = async () => {
       try {
         const r = await api.personas();
         setPersonas(r.personas || []);
-        setOverrides((r.overrides as Record<string, Override>) || {});
+        const ov = (r.overrides as Record<string, unknown>) || {};
+        setOverrides(ov as Record<string, Override>);
+        // Sync streaming state from actual _paused flag (only on first load)
+        setStreaming(prev => prev === null ? !ov._paused : prev);
       } catch {
         /* keep */
       }
@@ -40,19 +41,15 @@ export default function GodModePage() {
     return !ov || (ov.activity_weight ?? 1) > 0;
   }).length;
 
-  const handleStart = async () => {
+  const handleToggleStream = async () => {
     try {
-      await api.resumeStreamer();
-      setDemoStatus("running");
-    } catch {
-      /* offline */
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      await api.pauseStreamer();
-      setDemoStatus("stopped");
+      if (streaming) {
+        await api.pauseStreamer();
+        setStreaming(false);
+      } else {
+        await api.resumeStreamer();
+        setStreaming(true);
+      }
     } catch {
       /* offline */
     }
@@ -81,12 +78,6 @@ export default function GodModePage() {
     } catch (e) {
       alert("Purge failed: " + String(e));
     }
-  };
-
-  const statusColors: Record<DemoStatus, string> = {
-    idle: "bg-white/10 text-white/50",
-    running: "bg-emerald-500/20 text-emerald-300",
-    stopped: "bg-rose-500/20 text-rose-300",
   };
 
   return (
@@ -150,115 +141,71 @@ export default function GodModePage() {
         {/* 1. Live Event Feed */}
         <GodModeLiveFeed />
 
-        {/* 2. Curiosity Weights — rendered expanded */}
-        <div className="border border-white/10 rounded">
-          <div className="px-3 py-2 text-xs text-white/70 font-mono border-b border-white/10">
-            ▼ Curiosity tuning
+        {/* 2. Note Generation — cadence + start/stop toggle */}
+        <div className="border border-white/10 rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
+              Note Generation
+            </div>
+            <button
+              onClick={handleToggleStream}
+              disabled={streaming === null}
+              className={`px-4 py-1.5 rounded text-xs font-mono transition-colors ${
+                streaming
+                  ? "bg-rose-700 hover:bg-rose-600 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white"
+              } disabled:opacity-30`}
+            >
+              {streaming ? "Stop" : "Start"}
+            </button>
           </div>
-          <CuriosityTuningExpanded />
+          <NoteCadenceControl />
         </div>
 
-        {/* 3. Manual Research Trigger */}
+        {/* 3. Curiosity Presets */}
+        <CuriosityTuning />
+
+        {/* 4. Manual Research Trigger */}
         <ManualResearchTrigger />
 
-        {/* 3.5. Note Cadence Control */}
-        <NoteCadenceControl />
-
-        {/* 4. Demo Lifecycle */}
-        <div className="border border-white/10 rounded p-3">
-          <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-3">
-            Demo Lifecycle
-          </div>
-
-          {/* Start / Reset / Stop + status badge */}
-          <div className="flex items-center gap-2 mb-3">
-            <button
-              onClick={handleStart}
-              className="flex-1 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-mono transition-colors"
-            >
-              Start
-            </button>
-            <button
-              onClick={handleStop}
-              className="flex-1 px-3 py-2 rounded bg-rose-700 hover:bg-rose-600 text-xs text-white font-mono transition-colors"
-            >
-              Stop
-            </button>
-            <span
-              className={`px-2 py-1 rounded text-[10px] font-mono capitalize ${statusColors[demoStatus]}`}
-            >
-              {demoStatus}
-            </span>
-          </div>
-
-          {/* Reindex + Purge */}
-          <div className="flex gap-2">
-            <button
-              onClick={handleReindex}
-              className="flex-1 px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 font-mono transition-colors"
-            >
-              Reindex wiki
-            </button>
-            <button
-              onClick={handlePurge}
-              className="flex-1 px-3 py-2 rounded bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-xs text-rose-300 font-mono transition-colors"
-            >
-              Purge everything
-            </button>
-          </div>
+        {/* 5. Maintenance */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleReindex}
+            className="flex-1 px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 font-mono transition-colors"
+          >
+            Reindex wiki
+          </button>
+          <button
+            onClick={handlePurge}
+            className="flex-1 px-3 py-2 rounded bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-xs text-rose-300 font-mono transition-colors"
+          >
+            Purge everything
+          </button>
         </div>
       </main>
     </div>
   );
 }
 
-// Inline expanded version of CuriosityTuning (avoids modifying the original component)
-const CURIOSITY_KEYS = [
-  "novelty",
-  "recurrence_gap",
-  "cross_student",
-  "surprise",
-  "severity_weight",
-  "recency",
+// Logarithmic cadence: slider 0–100 maps to 0s–86400s (1/day)
+const CADENCE_PRESETS = [
+  { label: "Auto", value: 0 },
+  { label: "1/s", value: 1 },
+  { label: "1/5s", value: 5 },
+  { label: "1/30s", value: 30 },
+  { label: "1/min", value: 60 },
+  { label: "1/5m", value: 300 },
+  { label: "1/hr", value: 3600 },
+  { label: "1/day", value: 86400 },
 ];
-const CURIOSITY_DEFAULTS: Record<string, number> = {
-  novelty: 0.2,
-  recurrence_gap: 0.2,
-  cross_student: 0.2,
-  surprise: 0.15,
-  severity_weight: 0.15,
-  recency: 0.1,
-};
 
-function CuriosityTuningExpanded() {
-  const [w, setW] = useState<Record<string, number>>({ ...CURIOSITY_DEFAULTS });
-
-  const update = (k: string, v: number) => {
-    const next = { ...w, [k]: v };
-    setW(next);
-    api.curiosityWeights({ [k]: v }).catch(() => {});
-  };
-
-  return (
-    <div className="p-3 space-y-2">
-      {CURIOSITY_KEYS.map((k) => (
-        <div key={k}>
-          <label className="block text-[10px] text-white/60 font-mono">
-            {k}: {w[k].toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={0.5}
-            step={0.01}
-            value={w[k]}
-            onChange={(e) => update(k, parseFloat(e.target.value))}
-            className="w-full"
-          />
-        </div>
-      ))}
-    </div>
-  );
+function formatCadence(v: number): string {
+  if (v <= 0) return "auto (2–8s)";
+  if (v < 60) return `1 every ${v.toFixed(0)}s`;
+  if (v < 3600) return `1 every ${(v / 60).toFixed(0)}m`;
+  if (v < 86400) return `1 every ${(v / 3600).toFixed(1)}h`;
+  return "1/day";
 }
 
 function NoteCadenceControl() {
@@ -277,30 +224,26 @@ function NoteCadenceControl() {
     api.setNoteCadence(v).catch(() => {});
   };
 
-  const label = cadence <= 0
-    ? "random 2–8s (default)"
-    : `${cadence.toFixed(1)}s (±20% jitter)`;
-
   return (
-    <div className="border border-white/10 rounded p-3">
-      <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">
-        Note Generation Cadence
+    <div>
+      <div className="flex flex-wrap gap-1 mb-2">
+        {CADENCE_PRESETS.map((p) => (
+          <button
+            key={p.value}
+            onClick={() => update(p.value)}
+            disabled={!loaded}
+            className={`text-[9px] font-mono px-2 py-1 rounded transition-colors ${
+              cadence === p.value
+                ? "bg-white/15 text-white border border-white/20"
+                : "bg-white/5 text-white/40 hover:text-white/70 border border-transparent"
+            } disabled:opacity-30`}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
-      <div className="flex items-center gap-3">
-        <input
-          type="range"
-          min={0}
-          max={10}
-          step={0.5}
-          value={cadence}
-          onChange={(e) => update(parseFloat(e.target.value))}
-          className="flex-1"
-          disabled={!loaded}
-        />
-        <span className="text-xs font-mono text-white/70 w-44 text-right">{label}</span>
-      </div>
-      <div className="text-[9px] text-white/40 font-mono mt-1">
-        0 = random 2–8s · higher = slower · streamer reads this on each tick
+      <div className="text-[9px] text-white/40 font-mono">
+        current: {formatCadence(cadence)} · max 2 notes/sec
       </div>
     </div>
   );

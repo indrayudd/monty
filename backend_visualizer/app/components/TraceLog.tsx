@@ -22,12 +22,14 @@ function categorize(stage: string): Exclude<LogCategory, "all"> {
   return "graph";
 }
 
-function makeLogLine(stage: string, student: string, prev: string): LogLine | null {
+function makeLogLine(stage: string, student: string, prev: string, stageStartedAt?: string): LogLine | null {
   if (!stage || stage === prev) return null;
   const cat = categorize(stage);
   const stageLabel = stage.replace(/_/g, " ");
-  const now = new Date();
-  const ts = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}.${now.getMilliseconds().toString().padStart(3, "0")}`;
+  // Use backend timestamp if available
+  const ts = stageStartedAt
+    ? stageStartedAt.slice(11, 23)
+    : new Date().toISOString().slice(11, 23);
 
   let text = `[${cat}] ${stageLabel}`;
   if (student && student !== "—") text += ` · ${student}`;
@@ -63,11 +65,12 @@ export function TraceLog() {
     if (paused) return;
     const tick = async () => {
       try {
-        const overview = await api.demoOverview() as { runtime?: { current_stage?: string; current_student?: string } };
+        const overview = await api.demoOverview() as { runtime?: { current_stage?: string; current_student?: string; stage_started_at?: string } };
         const stage = overview?.runtime?.current_stage || "";
         const student = overview?.runtime?.current_student || "—";
+        const stageStartedAt = overview?.runtime?.stage_started_at || "";
 
-        const line = makeLogLine(stage, student, prevStage);
+        const line = makeLogLine(stage, student, prevStage, stageStartedAt);
         if (line) {
           setPrevStage(stage);
           setRateCount(c => {

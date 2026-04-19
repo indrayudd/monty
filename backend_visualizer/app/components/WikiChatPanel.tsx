@@ -3,25 +3,32 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-type Message = {
+export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
 };
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const BASE = typeof process.env.NEXT_PUBLIC_API_BASE_URL === "string"
+  ? process.env.NEXT_PUBLIC_API_BASE_URL
+  : "http://localhost:8000";
 
 export function WikiChatPanel({
   currentPagePath,
   onClose,
   initialQuestion,
   initialSelectedText,
+  messages,
+  setMessages,
+  onClear,
 }: {
   currentPagePath: string | null;
   onClose: () => void;
   initialQuestion?: string;
   initialSelectedText?: string;
+  messages: ChatMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  onClear: () => void;
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [selectedText, setSelectedText] = useState<string | null>(null);
@@ -58,8 +65,8 @@ export function WikiChatPanel({
     const usedSelection = selText ?? selectedText;
     setSelectedText(null);
 
-    const userMsg: Message = { role: "user", content: q };
-    const assistantMsg: Message = { role: "assistant", content: "" };
+    const userMsg: ChatMessage = { role: "user", content: q };
+    const assistantMsg: ChatMessage = { role: "assistant", content: "" };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
 
@@ -109,7 +116,7 @@ export function WikiChatPanel({
     } finally {
       setStreaming(false);
     }
-  }, [input, streaming, selectedText, messages, currentPagePath]);
+  }, [input, streaming, selectedText, messages, currentPagePath, setMessages]);
 
   // Send initial question on mount (once)
   useEffect(() => {
@@ -124,7 +131,18 @@ export function WikiChatPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <span className="text-xs font-mono text-white/50">Ask Monty</span>
-        <button onClick={onClose} className="text-white/30 hover:text-white text-xs">&#x2715;</button>
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <button
+              onClick={onClear}
+              className="text-white/25 hover:text-white/60 text-[10px] font-mono transition-colors"
+              title="Clear chat history"
+            >
+              Clear
+            </button>
+          )}
+          <button onClick={onClose} className="text-white/30 hover:text-white text-xs">&#x2715;</button>
+        </div>
       </div>
 
       {/* Messages */}

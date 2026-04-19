@@ -80,13 +80,14 @@ def _gather_context(
             for f in incident_files:
                 parts.append(f"## Incident: {f.name}\n{f.read_text(encoding='utf-8')[:800]}")
     else:
-        # General query — use anonymized behavioral KG only
+        # General query — use full wiki markdown (the LLM-wiki query advantage)
         parts.append("## Behavioral Knowledge Graph (anonymized, no student names)")
         conn = _conn()
         try:
             cur = conn.cursor()
             # Find relevant behavioral nodes by keyword matching
             keywords = [w for w in question.lower().split() if len(w) > 3]
+            matched_slugs: list[str] = []
             if keywords:
                 like_clauses = " OR ".join(["title LIKE ? OR summary LIKE ?"] * len(keywords))
                 params = []
@@ -95,24 +96,50 @@ def _gather_context(
                 cur.execute(
                     f"SELECT slug, type, title, summary, support_count, students_count "
                     f"FROM behavioral_nodes WHERE {like_clauses} "
-                    f"ORDER BY support_count DESC LIMIT 15",
+                    f"ORDER BY support_count DESC LIMIT 10",
                     params,
                 )
                 rows = cur.fetchall()
-                if rows:
-                    for r in rows:
-                        parts.append(
-                            f"- [{r[1]}] {r[2]} (slug: {r[0]}, "
-                            f"support: {r[4]}, students: {r[5]})"
-                            f"{': ' + r[3] if r[3] else ''}"
-                        )
+                matched_slugs = [r[0] for r in rows] if rows else []
 
-            # Also include the wiki index for navigation help
-            index_path = WIKI_ROOT / "index.md"
-            if index_path.exists():
-                parts.append(f"## Wiki index (for navigation)\n{index_path.read_text(encoding='utf-8')[:2000]}")
+            # If no keyword matches, grab top nodes by support count
+            if not matched_slugs:
+                cur.execute(
+                    "SELECT slug FROM behavioral_nodes ORDER BY support_count DESC LIMIT 8"
+                )
+                matched_slugs = [r[0] for r in cur.fetchall()]
         finally:
             conn.close()
+
+        # Read full markdown files for matched nodes (Evidence, descriptions, etc.)
+        for slug in matched_slugs[:8]:
+            # Search across all behavioral subdirs for the slug
+            for subdir in (WIKI_ROOT / "behavioral").iterdir():
+                if not subdir.is_dir() or subdir.name.startswith("_"):
+                    continue
+                md_file = subdir / f"{slug}.md"
+                if md_file.exists():
+                    content = md_file.read_text(encoding="utf-8")[:1500]
+                    parts.append(f"## Node: {slug} ({subdir.name})\n{content}")
+                    break
+
+        # Read relevant edge files that connect matched nodes
+        edges_dir = WIKI_ROOT / "behavioral" / "_edges"
+        if edges_dir.exists():
+            edge_count = 0
+            for edge_file in edges_dir.glob("*.md"):
+                if edge_count >= 10:
+                    break
+                fname = edge_file.stem
+                if any(slug in fname for slug in matched_slugs[:5]):
+                    content = edge_file.read_text(encoding="utf-8")[:600]
+                    parts.append(f"## Edge: {fname}\n{content}")
+                    edge_count += 1
+
+        # Wiki index for navigation
+        index_path = WIKI_ROOT / "index.md"
+        if index_path.exists():
+            parts.append(f"## Wiki index\n{index_path.read_text(encoding='utf-8')[:2000]}")
 
     return "\n\n".join(parts)
 

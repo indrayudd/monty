@@ -9,15 +9,7 @@ export function WikiChatBar({
   selectedText: string | null;
 }) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-      inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 120) + "px";
-    }
-  }, [value]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const submit = () => {
     const q = value.trim();
@@ -27,37 +19,32 @@ export function WikiChatBar({
   };
 
   return (
-    <div className="border-t border-white/10 bg-zinc-950 px-4 py-2">
+    <div className="flex items-center gap-1.5 flex-1 mr-2">
       {selectedText && (
-        <div className="mb-1 flex items-center gap-2">
-          <span className="text-[9px] font-mono bg-white/5 border border-white/10 rounded px-2 py-0.5 text-white/50 truncate max-w-[300px]">
-            Using selection: {selectedText.slice(0, 60)}{selectedText.length > 60 ? "\u2026" : ""}
-          </span>
-        </div>
+        <span className="text-[8px] font-mono bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-white/40 truncate max-w-[160px] shrink-0">
+          Selection: {selectedText.slice(0, 30)}{selectedText.length > 30 ? "\u2026" : ""}
+        </span>
       )}
-      <div className="flex items-end gap-2">
-        <textarea
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-          placeholder="Ask Monty"
-          rows={1}
-          className="flex-1 bg-zinc-900 border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-white/30 resize-none focus:outline-none focus:border-white/30 font-mono"
-        />
-        <button
-          onClick={submit}
-          disabled={!value.trim()}
-          className="px-3 py-2 rounded bg-white/10 hover:bg-white/20 text-white/70 text-sm disabled:opacity-30 transition-colors"
-        >
-          ↑
-        </button>
-      </div>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Ask Monty"
+        className="flex-1 bg-zinc-900 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white placeholder-white/30 focus:outline-none focus:border-white/30 font-mono min-w-[120px]"
+      />
+      <button
+        onClick={submit}
+        disabled={!value.trim()}
+        className="px-1.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white/60 text-[10px] disabled:opacity-30 transition-colors"
+      >
+        ↑
+      </button>
     </div>
   );
 }

@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, type StudentIncident, type Persona } from "../lib/api";
-import { StudentGraphPanel } from "./StudentGraphPanel";
-import { StudentResearchPanel } from "./StudentResearchPanel";
 
 const SEVERITY_BORDER: Record<string, string> = {
   red: "border-l-rose-500",
@@ -11,7 +9,7 @@ const SEVERITY_BORDER: Record<string, string> = {
   "": "border-l-zinc-600",
 };
 
-type View = "timeline" | "graph" | "research";
+type View = "timeline";
 
 export function StudentTimeline({
   highlightSlug,
@@ -78,29 +76,7 @@ export function StudentTimeline({
 
   const incidents: StudentIncident[] = active ? studentData[active] || [] : [];
 
-  const renderTabs = () => (
-    <div className="flex gap-1 ml-auto shrink-0">
-      {(
-        [
-          ["timeline", "Timeline"],
-          ["graph", "Graph"],
-          ["research", "Research"],
-        ] as const
-      ).map(([v, label]) => (
-        <button
-          key={v}
-          onClick={() => setView(v)}
-          className={`px-2.5 py-1 text-[11px] font-mono rounded transition ${
-            view === v
-              ? "bg-white/10 text-white"
-              : "text-white/50 hover:text-white"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
+  const renderTabs = () => null;
 
   return (
     <div className="h-full flex flex-col bg-zinc-950">
@@ -130,22 +106,7 @@ export function StudentTimeline({
         ))}
         {renderTabs()}
       </div>
-      {view === "graph" && active && (
-        <div className="flex-1 min-h-0">
-          <StudentGraphPanel
-            studentName={active}
-            incidents={incidents}
-            highlightSlug={highlightSlug}
-            onSelectNode={onSelectBehavioralNode}
-          />
-        </div>
-      )}
-      {view === "research" && active && (
-        <div className="flex-1 min-h-0">
-          <StudentResearchPanel studentName={active} />
-        </div>
-      )}
-      {view === "timeline" && (
+      {(
       <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-2 p-3 min-h-0">
         {active && incidents.length === 0 && (
           <div className="text-white/40 text-sm self-center font-mono w-full text-center">

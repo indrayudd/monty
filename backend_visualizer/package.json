@@ -8,6 +8,8 @@
     "start": "next start --port 3200"
   },
   "dependencies": {
+    "@cosmograph/cosmograph": "^2.2.1",
+    "@cosmograph/react": "^2.2.1",
     "@types/d3-force": "^3.0.10",
     "d3-force": "^3.0.0",
     "next": "16.2.1",

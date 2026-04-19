@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { forceX, forceY } from "d3-force";
 import { api, type StudentIncident, type BehavioralNode } from "../lib/api";
@@ -8,19 +8,82 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
 }) as unknown as React.ComponentType<Record<string, unknown>>;
 
-// From DESIGN.md § 2 "Behavioral Node Hues (The Functional Spectrum)"
-const TYPE_COLORS: Record<string, string> = {
-  setting_event: "#00D8FF",   // Cyan
-  antecedent: "#BC8CFF",      // Purple
-  behavior: "#FFA657",        // Orange
-  function: "#FF7EB6",        // Magenta
-  brain_state: "#79C0FF",     // Indigo
-  response: "#3FB950",        // Teal
+// Per-persona color palettes — maximally distinct hue families.
+// Each type within a persona uses different lightness/saturation for contrast.
+const PERSONA_PALETTES: Record<string, Record<string, string>> = {
+  "Arjun Nair": {
+    setting_event: "#FF4444",   // bright red
+    antecedent: "#FF8866",      // coral
+    behavior: "#CC2200",        // dark red
+    function: "#FF6633",        // red-orange
+    brain_state: "#FF2266",     // crimson
+    response: "#FFAA88",        // peach
+    protective_factor: "#CC5544", // brick
+  },
+  "Diya Malhotra": {
+    setting_event: "#7C4DFF",   // electric purple
+    antecedent: "#B388FF",      // light purple
+    behavior: "#5500CC",        // deep purple
+    function: "#9C6AFF",        // medium purple
+    brain_state: "#6200EA",     // indigo-purple
+    response: "#D1C4E9",        // pale lilac
+    protective_factor: "#8855DD", // plum
+  },
+  "Kiaan Gupta": {
+    setting_event: "#00E5FF",   // electric cyan
+    antecedent: "#00BFA5",      // teal
+    behavior: "#1DE9B6",        // mint green
+    function: "#00B8D4",        // dark cyan
+    brain_state: "#18FFFF",     // bright cyan
+    response: "#64FFDA",        // aqua
+    protective_factor: "#26A69A", // deep teal
+  },
+  "Mira Shah": {
+    setting_event: "#FFAB00",   // vivid amber
+    antecedent: "#FFD740",      // bright gold
+    behavior: "#FF8F00",        // deep orange
+    function: "#FFC400",        // sunflower
+    brain_state: "#FFEA00",     // yellow
+    response: "#FFD180",        // light peach
+    protective_factor: "#FF6D00", // tangerine
+  },
+  "Saanvi Verma": {
+    setting_event: "#FF4081",   // hot pink
+    antecedent: "#F50057",      // deep pink
+    behavior: "#FF80AB",        // light pink
+    function: "#E040FB",        // purple-pink
+    brain_state: "#D500F9",     // vivid magenta
+    response: "#FF8A80",        // salmon pink
+    protective_factor: "#EA80FC", // orchid
+  },
+};
+
+const NODE_TYPE_LABELS: Record<string, string> = {
+  setting_event: "Setting Event",
+  antecedent: "Antecedent",
+  behavior: "Behavior",
+  function: "Function",
+  brain_state: "Brain State",
+  response: "Response",
+  protective_factor: "Protective Factor",
+};
+
+// Fallback palette for unknown students
+const DEFAULT_PALETTE: Record<string, string> = {
+  setting_event: "#00D8FF",
+  antecedent: "#BC8CFF",
+  behavior: "#FFA657",
+  function: "#FF7EB6",
+  brain_state: "#79C0FF",
+  response: "#3FB950",
   protective_factor: "#94a3b8",
 };
 
+function getPalette(name: string): Record<string, string> {
+  return PERSONA_PALETTES[name] || DEFAULT_PALETTE;
+}
+
 function pathToType(refPath: string): string {
-  // e.g. "behavioral/antecedents/peer-takes-material" -> "antecedent"
   const parts = refPath.split("/");
   const folder = parts.length >= 2 ? parts[parts.length - 2] : "";
   return folder.replace(/s$/, "");
@@ -42,8 +105,17 @@ export function StudentGraphPanel({
   >({});
   const [degraded, setDegraded] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [showLegend, setShowLegend] = useState(false);
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: 300 });
   const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodeObjRef = useRef<Map<string, any>>(new Map());
+  const prevIncidentIdsRef = useRef<string>("");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
+  const fgRef = useRef<unknown>(null);
+
+  const palette = getPalette(studentName);
 
   const measureContainer = useCallback(() => {
     if (containerRef.current) {
@@ -61,15 +133,7 @@ export function StudentGraphPanel({
     return () => ro.disconnect();
   }, [measureContainer]);
 
-  // Preserve node identity across polls AND across student switches so the
-  // force layout keeps positions for shared nodes. Unreferenced nodes drop
-  // naturally when they're no longer in the touch count.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nodeObjRef = useRef<Map<string, any>>(new Map());
-  const fgRef = useRef<unknown>(null);
-
-  // Fetch the behavioral index (for node types/titles) periodically.
-  // Incidents come in via props from the parent's per-student pre-cache.
+  // Fetch behavioral index periodically
   useEffect(() => {
     let stop = false;
     const tick = async () => {
@@ -85,22 +149,13 @@ export function StudentGraphPanel({
       }
     };
     tick();
-    const i = setInterval(tick, 2000);
-    return () => {
-      stop = true;
-      clearInterval(i);
-    };
+    const i = setInterval(tick, 4000);
+    return () => { stop = true; clearInterval(i); };
   }, []);
 
-  // Track previous structural state to avoid force-graph reheat on property-only polls.
-  const prevIncidentIdsRef = useRef<string>("");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const prevGraphDataRef = useRef<{ nodes: any[]; links: any[] } | null>(null);
-
-  const data = useMemo(() => {
-    // How many of this student's incidents touched each behavioral ref
+  // Build graph data — structural diff to avoid reheat jitter
+  useEffect(() => {
     const touchCounts = new Map<string, number>();
-    // Co-occurrence counts for pairs within the same incident
     const coocCounts = new Map<string, number>();
     for (const inc of incidents) {
       const refs = inc.behavioral_ref_slugs || [];
@@ -114,101 +169,128 @@ export function StudentGraphPanel({
       }
     }
 
-    // Check if the incident set structurally changed (new/removed incidents).
-    // If not, mutate node properties in place and return the SAME graphData
-    // reference so force-graph doesn't reheat the simulation.
-    const incIdKey = incidents.map((i) => i.id).sort().join(",");
-    const structuralChange = incIdKey !== prevIncidentIdsRef.current;
+    const nodeMap = nodeObjRef.current;
+    const newIds = new Set<string>();
+    let hasNewNodes = false;
+    let hasRemovedNodes = false;
 
-    // Always mutate existing node properties in place
-    const prev = nodeObjRef.current;
     for (const [refPath, count] of touchCounts) {
-      const existing = prev.get(refPath);
-      if (existing) {
-        const slug = refPath.split("/").pop() || refPath;
-        const fromIndex = behavioralIndex[slug];
-        existing.val = Math.max(3, Math.log2(1 + count) * 5);
-        existing.count = count;
-        existing.name = fromIndex?.title || slug;
-        existing.type = fromIndex?.type || pathToType(refPath);
-        existing.slug = slug;
-        existing.color = TYPE_COLORS[existing.type as string] || "#6b7280";
-      }
-    }
-
-    // If no structural change, return previous graphData ref (no reheat)
-    if (!structuralChange && prevGraphDataRef.current) {
-      return prevGraphDataRef.current;
-    }
-    prevIncidentIdsRef.current = incIdKey;
-
-    const next = new Map<string, Record<string, unknown>>();
-    for (const [refPath, count] of touchCounts) {
+      newIds.add(refPath);
       const slug = refPath.split("/").pop() || refPath;
       const fromIndex = behavioralIndex[slug];
       const type = fromIndex?.type || pathToType(refPath);
       const title = fromIndex?.title || slug;
       const val = Math.max(3, Math.log2(1 + count) * 5);
-      const existing = prev.get(refPath);
+      const color = palette[type] || palette.behavior || "#6b7280";
+
+      const existing = nodeMap.get(refPath);
       if (existing) {
-        next.set(refPath, existing);
+        existing.val = val;
+        existing.count = count;
+        existing.name = title;
+        existing.type = type;
+        existing.slug = slug;
+        existing.color = color;
       } else {
-        next.set(refPath, {
+        const existingNodes = Array.from(nodeMap.values());
+        const neighbor = existingNodes.length > 0
+          ? existingNodes[Math.floor(Math.random() * existingNodes.length)]
+          : null;
+        nodeMap.set(refPath, {
           id: refPath,
           slug,
           name: title,
           type,
           count,
           val,
-          color: TYPE_COLORS[type] || "#6b7280",
+          color,
+          x: neighbor ? neighbor.x + (Math.random() - 0.5) * 40 : undefined,
+          y: neighbor ? neighbor.y + (Math.random() - 0.5) * 40 : undefined,
+          _enterTime: Date.now(),
         });
+        hasNewNodes = true;
       }
     }
-    nodeObjRef.current = next;
 
-    const links: Record<string, unknown>[] = [];
-    for (const [key, count] of coocCounts) {
-      const [a, b] = key.split("||");
-      if (!next.has(a) || !next.has(b)) continue;
-      links.push({
-        source: a,
-        target: b,
-        width: Math.max(0.4, Math.log2(1 + count) * 1.2),
-        count,
-        color: "rgba(255,255,255,0.22)",
-      });
+    for (const key of nodeMap.keys()) {
+      if (!newIds.has(key)) { nodeMap.delete(key); hasRemovedNodes = true; }
     }
 
-    const result = { nodes: Array.from(next.values()), links };
-    prevGraphDataRef.current = result;
-    return result;
-  }, [incidents, behavioralIndex]);
+    const incIdKey = incidents.map((i) => i.id).sort().join(",");
+    const structuralChange = incIdKey !== prevIncidentIdsRef.current;
 
+    if (structuralChange || hasNewNodes || hasRemovedNodes || graphData.nodes.length === 0) {
+      prevIncidentIdsRef.current = incIdKey;
+      const now = Date.now();
+
+      const links: Record<string, unknown>[] = [];
+      for (const [key, count] of coocCounts) {
+        const [a, b] = key.split("||");
+        if (!nodeMap.has(a) || !nodeMap.has(b)) continue;
+        links.push({
+          source: a,
+          target: b,
+          width: Math.max(0.4, Math.log2(1 + count) * 1.2),
+          count,
+          color: "rgba(255,255,255,0.35)",
+          _enterTime: now,
+        });
+      }
+
+      setGraphData({ nodes: Array.from(nodeMap.values()), links });
+    }
+  }, [incidents, behavioralIndex, palette]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const data = graphData;
   const isEmpty = data.nodes.length === 0;
 
+  // Collect which node types are present for the legend
+  const presentTypes = new Set(data.nodes.map((n: { type?: string }) => n.type || ""));
+
   return (
-    <div ref={containerRef} className="relative h-full w-full bg-zinc-950 overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative h-full w-full bg-zinc-950 overflow-hidden"
+      onMouseEnter={() => setShowLegend(true)}
+      onMouseLeave={() => setShowLegend(false)}
+    >
+      {/* Info overlay */}
       <div className="absolute top-2 left-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono border border-white/10 max-w-xs">
         <div className="font-semibold mb-1 text-white">
           {studentName}
           <span className="text-white/40"> · subgraph</span>
         </div>
         <div className="text-white/50">
-          {incidents.length} incidents · {data.nodes.length} nodes touched ·
-          node size = this student&apos;s touch count
+          {incidents.length} incidents · {data.nodes.length} nodes touched
         </div>
       </div>
+
+      {/* Hover legend — shows node type colors for this persona */}
+      {showLegend && presentTypes.size > 0 && (
+        <div className="absolute bottom-2 left-2 z-10 bg-black/80 rounded p-2 text-[9px] font-mono border border-white/10 backdrop-blur-sm">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+            {Object.entries(palette).map(([type, color]) => {
+              if (!presentTypes.has(type)) return null;
+              return (
+                <div key={type} className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                  <span className="text-white/60">{NODE_TYPE_LABELS[type] || type}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {degraded && (
         <div className="absolute top-14 left-2 z-10 text-[10px] text-amber-300/80 font-mono bg-amber-950/40 border border-amber-500/20 rounded px-2 py-1">
-          ⚠ data unreachable — last render retained
+          data unreachable
         </div>
       )}
       {isEmpty && !degraded && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-center text-white/40 font-mono text-xs max-w-sm px-4">
-            No behavioral nodes touched by {studentName} yet. Wait for the
-            agent loop to process incoming notes, or inject a few via God
-            Mode.
+            No behavioral nodes for {studentName} yet.
           </div>
         </div>
       )}
@@ -220,23 +302,37 @@ export function StudentGraphPanel({
         nodeRelSize={4}
         nodeLabel={() => ""}
         backgroundColor="rgba(9,9,11,0)"
-        warmupTicks={80}
-        cooldownTicks={60}
-        d3AlphaDecay={0.1}
-        d3VelocityDecay={0.55}
+        warmupTicks={40}
+        cooldownTicks={200}
+        cooldownTime={10000}
+        d3AlphaDecay={0.0228}
+        d3VelocityDecay={0.4}
+        enableNodeDrag={true}
+        onNodeDrag={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const n = node as any;
+          n.fx = n.x;
+          n.fy = n.y;
+        }}
+        onNodeDragEnd={(node: unknown) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const n = node as any;
+          n.fx = undefined;
+          n.fy = undefined;
+        }}
         onEngineTick={() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const fg = fgRef.current as any;
           if (!fg || fg._montyForcesTuned) return;
           if (fg.d3Force) {
             const charge = fg.d3Force("charge");
-            if (charge) charge.strength(-45).distanceMax(260);
-            fg.d3Force("x", forceX(0).strength(0.06));
-            fg.d3Force("y", forceY(0).strength(0.06));
+            if (charge) charge.strength(-30);
+            fg.d3Force("x", forceX());
+            fg.d3Force("y", forceY());
             fg._montyForcesTuned = true;
           }
         }}
-        linkWidth={(l: unknown) => (l as { width: number }).width}
+        linkWidth={(l: unknown) => Math.max(0.8, (l as { width: number }).width)}
         linkColor={(l: unknown) => (l as { color: string }).color}
         nodeCanvasObject={(
           node: unknown,
@@ -248,6 +344,10 @@ export function StudentGraphPanel({
           const r = n.val;
           const isHighlighted =
             highlightSlug && (n.slug === highlightSlug || n.id.endsWith(highlightSlug));
+          // Fade-in: 0→1 over 100ms
+          const age = n._enterTime ? Date.now() - n._enterTime : 1000;
+          const opacity = Math.min(1, age / 100);
+          if (opacity < 1) ctx.globalAlpha = opacity;
           // hover ring
           if (n.id === hoveredId) {
             ctx.beginPath();
@@ -265,7 +365,7 @@ export function StudentGraphPanel({
           ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
           ctx.fillStyle = n.id === hoveredId ? "#ffffff" : isHighlighted ? "white" : n.color;
           ctx.fill();
-          // Labels drawn in onRenderFramePost so they're always on top.
+          if (opacity < 1) ctx.globalAlpha = 1;
         }}
         onRenderFramePost={(ctx: CanvasRenderingContext2D, globalScale: number) => {
           for (const node of data.nodes) {
@@ -274,15 +374,16 @@ export function StudentGraphPanel({
             const isHighlighted = highlightSlug && (n.slug === highlightSlug || n.id?.endsWith?.(highlightSlug));
             if (n.id === hoveredId || isHighlighted) {
               const r = n.val || 4;
-              const fontSize = Math.min(12, Math.max(9, 10 / globalScale));
+              const fontSize = 11 / globalScale;
               ctx.font = `${fontSize}px sans-serif`;
               const text = (n.name || n.id) as string;
               const textW = ctx.measureText(text).width;
-              const tx = n.x + r + 4;
-              const ty = n.y + 3;
+              const pad = 3 / globalScale;
+              const tx = n.x + r + pad;
+              const ty = n.y + pad;
               ctx.fillStyle = "rgba(0,0,0,0.8)";
               ctx.beginPath();
-              ctx.roundRect(tx - 3, ty - fontSize + 1, textW + 6, fontSize + 4, 3);
+              ctx.roundRect(tx - pad, ty - fontSize + pad / 3, textW + pad * 2, fontSize + pad * 1.3, pad);
               ctx.fill();
               ctx.fillStyle = "rgba(255,255,255,0.95)";
               ctx.fillText(text, tx, ty);
@@ -294,13 +395,10 @@ export function StudentGraphPanel({
           setHoveredId((node as any)?.id || null);
         }}
         onEngineStop={() => {
-          // Auto-zoom to fit all nodes on FIRST settle only. Subsequent
-          // engine stops (from data polls) must not override the user's
-          // pan/zoom.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const fg = fgRef.current as any;
           if (fg?.zoomToFit && !fg._montyInitialFit) {
-            fg.zoomToFit(400, 30);
+            fg.zoomToFit(300, 20);
             fg._montyInitialFit = true;
           }
         }}

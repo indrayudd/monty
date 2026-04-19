@@ -95,8 +95,9 @@ def main() -> int:
                 cadence = float(ov.get("_note_cadence", 0))
             except Exception:
                 cadence = 0
+            # Hard floor: never faster than 0.5s (2 notes/sec max)
             if cadence > 0:
-                time.sleep(cadence * random.uniform(0.8, 1.2))
+                time.sleep(max(0.5, cadence * random.uniform(0.8, 1.2)))
             else:
                 time.sleep(random.uniform(2.0, 8.0))
         except (KeyboardInterrupt, BrokenPipeError):

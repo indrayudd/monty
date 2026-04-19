@@ -82,7 +82,7 @@ export function TopAppBar() {
   return (
     <header className="h-12 border-b border-white/10 bg-black flex items-center px-4 gap-4 shrink-0">
       <div className="font-sans font-bold tracking-wide text-white text-sm">
-        MONTY OPS
+        MONTY
       </div>
       <nav className="flex gap-1">
         {link("/", "Live")}

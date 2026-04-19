@@ -62,6 +62,11 @@ export function CuriosityEventsStream() {
             <span className="col-span-1 text-right">
               {ev.curiosity_score.toFixed(2)}
             </span>
+            {ev.paper_count > 0 && (
+              <span className="text-cyan-400/70 text-[9px]" title={`${ev.paper_count} paper(s) fetched`}>
+                {ev.paper_count}p
+              </span>
+            )}
             <span className="col-span-4 flex items-end gap-0.5 h-4">
               {["novelty","recurrence_gap","cross_student","surprise","severity_weight","recency"].map(k => {
                 const v = Math.max(0, Math.min(1, (ev.factors?.[k] as number) ?? 0));

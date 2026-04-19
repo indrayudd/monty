@@ -18,44 +18,70 @@ export function GodModeLiveFeed() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastNoteIdRef = useRef<number>(0);
   const lastResearchCheckRef = useRef<string>("");
+  const lastStageKeyRef = useRef<string>("");
+  const isFirstPollRef = useRef(true);
 
   useEffect(() => {
     const tick = async () => {
       try {
         const [overview, notesRes, researchRes] = await Promise.all([
           api.demoOverview() as Promise<{
-            runtime?: { current_stage?: string; current_student?: string };
+            runtime?: { current_stage?: string; current_student?: string; stage_started_at?: string };
           }>,
           api.recentNotes(3),
           fetch(
-            `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/api/runtime/research-edges`,
+            `${typeof process.env.NEXT_PUBLIC_API_BASE_URL === "string" ? process.env.NEXT_PUBLIC_API_BASE_URL : "http://localhost:8000"}/api/runtime/research-edges`,
             { cache: "no-store" },
           )
             .then((r) => r.json() as Promise<{ checks: { slug_a: string; slug_b: string; checked_at: string; found_connection: boolean }[] }>)
             .catch(() => ({ checks: [] })),
         ]);
 
-        const ts = formatTs(new Date());
-        const newLines: FeedLine[] = [];
-
-        // Stage line
         const stage = overview?.runtime?.current_stage || "idle";
         const student = overview?.runtime?.current_student || "";
-        newLines.push({
-          ts,
-          kind: "stage",
-          text: stage.replace(/_/g, " "),
-          detail: student || undefined,
-        });
+        const stageStarted = overview?.runtime?.stage_started_at || "";
+        const stageKey = `${stage}|${student}|${stageStarted}`;
+        const notes = notesRes?.notes || [];
+        const checks = researchRes?.checks || [];
+
+        // First poll: just set watermarks, don't emit old events
+        if (isFirstPollRef.current) {
+          isFirstPollRef.current = false;
+          lastStageKeyRef.current = stageKey;
+          if (notes.length > 0) {
+            lastNoteIdRef.current = Math.max(...notes.map((n: { id: number }) => n.id));
+          }
+          if (checks.length > 0) {
+            lastResearchCheckRef.current = `${checks[0].slug_a}|${checks[0].slug_b}|${checks[0].checked_at}`;
+          }
+          return;
+        }
+
+        const newLines: FeedLine[] = [];
+        if (stageKey !== lastStageKeyRef.current) {
+          lastStageKeyRef.current = stageKey;
+          // Use backend timestamp if available, else client time
+          const ts = stageStarted
+            ? stageStarted.slice(11, 23)
+            : formatTs(new Date());
+          newLines.push({
+            ts,
+            kind: "stage",
+            text: stage.replace(/_/g, " "),
+            detail: student || undefined,
+          });
+        }
 
         // Note emission lines (only show truly new ones)
-        const notes = notesRes?.notes || [];
         for (const n of notes) {
           if (n.id > lastNoteIdRef.current) {
             lastNoteIdRef.current = Math.max(lastNoteIdRef.current, n.id);
+            const noteTs = n.inserted_at
+              ? new Date(n.inserted_at).toISOString().slice(11, 23)
+              : formatTs(new Date());
             const preview = (n.body || "").replace(/^Name:.*\n+/, "").slice(0, 80).replace(/\n/g, " ");
             newLines.push({
-              ts,
+              ts: noteTs,
               kind: "note",
               text: `note #${n.id} → ${n.name}`,
               detail: preview + (preview.length >= 80 ? "…" : ""),
@@ -64,16 +90,17 @@ export function GodModeLiveFeed() {
         }
 
         // Research edge discoveries (only show new ones)
-        const checks = researchRes?.checks || [];
         if (checks.length > 0) {
           const latestKey = `${checks[0].slug_a}|${checks[0].slug_b}|${checks[0].checked_at}`;
           if (latestKey !== lastResearchCheckRef.current) {
             lastResearchCheckRef.current = latestKey;
             for (const c of checks.slice(0, 2)) {
-              // Only show checks we haven't seen (compare by checked_at recency)
               const found = c.found_connection;
+              const checkTs = c.checked_at
+                ? new Date(c.checked_at).toISOString().slice(11, 23)
+                : formatTs(new Date());
               newLines.push({
-                ts,
+                ts: checkTs,
                 kind: "research",
                 text: found
                   ? `research edge: ${c.slug_a} ↔ ${c.slug_b}`
@@ -86,10 +113,12 @@ export function GodModeLiveFeed() {
           }
         }
 
-        setLines((prev) => {
-          const next = [...prev, ...newLines];
-          return next.length > 80 ? next.slice(next.length - 80) : next;
-        });
+        if (newLines.length > 0) {
+          setLines((prev) => {
+            const next = [...prev, ...newLines];
+            return next.length > 80 ? next.slice(next.length - 80) : next;
+          });
+        }
       } catch {
         /* keep */
       }

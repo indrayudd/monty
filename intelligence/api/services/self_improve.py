@@ -195,7 +195,39 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
     total_knowledge_nodes = 0
     processed_students: list[dict] = []
 
-    for student_name, student_new_notes in impacted.items():
+    # Process at most MAX_NOTES_PER_CYCLE total across all students per cycle.
+    # This keeps cycles short so the UI never looks stuck on one student.
+    # Unprocessed notes stay in the queue and get picked up next cycle.
+    MAX_NOTES_PER_CYCLE = 10
+
+    # Interleave: take notes round-robin across students so no single student hogs the cycle
+    student_queues: dict[str, list[dict]] = {}
+    for student_name, notes_list in impacted.items():
+        student_queues[student_name] = list(notes_list)  # copy
+
+    cycle_notes: list[tuple[str, dict]] = []
+    while len(cycle_notes) < MAX_NOTES_PER_CYCLE and any(student_queues.values()):
+        for sname in list(student_queues.keys()):
+            if len(cycle_notes) >= MAX_NOTES_PER_CYCLE:
+                break
+            if student_queues[sname]:
+                cycle_notes.append((sname, student_queues[sname].pop(0)))
+            if not student_queues[sname]:
+                del student_queues[sname]
+
+    # Regroup by student for processing
+    cycle_impacted: dict[str, list[dict]] = defaultdict(list)
+    for sname, note in cycle_notes:
+        cycle_impacted[sname].append(note)
+
+    if verbose and len(new_notes) > MAX_NOTES_PER_CYCLE:
+        print(
+            f"[agent-cycle] backlog={len(new_notes)}, processing {len(cycle_notes)} this cycle "
+            f"({len(cycle_impacted)} students), remainder queued for next cycle",
+            flush=True,
+        )
+
+    for student_name, student_new_notes in cycle_impacted.items():
         latest_note_id = max(note["id"] for note in student_new_notes)
         _set_stage(
             "reassessing_student",
@@ -209,7 +241,12 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                 f"[agent-cycle] {student_name}: ingesting note_ids={note_ids}",
                 flush=True,
             )
-        for note in student_new_notes:
+        all_ref_paths: list[str] = []
+        total_notes_for_student = len(student_new_notes)
+        for note_idx, note in enumerate(student_new_notes):
+            set_runtime_values({
+                "stage_progress": f"{note_idx + 1}/{total_notes_for_student}",
+            })
             snapshot = assess_note(student_name, note["body"])
             snapshot["note_id"] = note["id"]
             insert_snapshot(snapshot)
@@ -300,10 +337,12 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
             except Exception as _ex:
                 import sys as _sys
                 print(f"[self_improve] wiki write failed: {_ex}", file=_sys.stderr, flush=True)
+            all_ref_paths.extend(ref_paths)
             # --- end wiki_writer integration ---
 
         all_student_notes = get_notes_for_student(student_name)
         aggregate = assess_student_history(student_name, all_student_notes)
+        set_runtime_values({"stage_progress": "1/1"})  # single-step
         _set_stage(
             "updating_profile",
             student_name=student_name,
@@ -339,18 +378,56 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
                 f"emergency_terms={emergency_terms}",
                 flush=True,
             )
-        # Always call enrich_student_knowledge — the curiosity gate INSIDE it
-        # decides whether to actually fetch from OpenAlex (score >= 0.70 + cooldown).
-        # evaluate_gate also writes curiosity_events rows on every call, which
-        # populates the /console curiosity stream.
+        # Evaluate curiosity gate on all behavioral nodes from this student's
+        # new notes. This populates curiosity_events for the /console stream,
+        # and identifies nodes worth researching.
+        from intelligence.api.services.curiosity import evaluate_gate as _eval_gate
+        seen_refs: set[str] = set()
+        fired_nodes: list[dict] = []
+        for ref_path in all_ref_paths:
+            slug_key = ref_path.replace("behavioral/", "")
+            if slug_key in seen_refs:
+                continue
+            seen_refs.add(slug_key)
+            try:
+                gate_result = _eval_gate(slug_key)
+                if gate_result.get("fire"):
+                    # Extract type and slug from the key (e.g. "behaviors/calm-body")
+                    parts = slug_key.split("/")
+                    fired_nodes.append({
+                        "type": parts[0] if len(parts) > 1 else "behaviors",
+                        "slug": parts[-1],
+                    })
+            except Exception:
+                pass
+
+        if verbose and fired_nodes:
+            print(
+                f"[agent-cycle][curiosity] {student_name}: gate fired for "
+                f"{[n['slug'] for n in fired_nodes]}",
+                flush=True,
+            )
+
+        # Inject fired nodes into aggregate so enrich_student_knowledge
+        # can find them via _curious_nodes_for_assessment
+        aggregate["behavioral_nodes"] = fired_nodes
+
         knowledge_payload = {"results": [], "new_nodes_created": 0, "queries": []}
         if True:
+            total_students = len(cycle_impacted)
+            student_idx = list(cycle_impacted.keys()).index(student_name) + 1
             _set_stage(
                 "enriching_knowledge",
                 student_name=student_name,
                 note_id=latest_note_id,
-                message=f"Expanding research memory for {student_name}.",
+                message=f"Expanding research memory for {student_name} ({student_idx}/{total_students}).",
             )
+            set_runtime_values({
+                "enrich_progress": f"{student_idx}/{total_students}",
+                "enrich_student": student_name,
+                "stage_progress": f"{student_idx}/{total_students}",
+                "enrich_query_progress": "",
+            })
             knowledge_payload = enrich_student_knowledge(
                 student_name,
                 aggregate,
@@ -360,6 +437,7 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
 
         total_knowledge_nodes += int(knowledge_payload.get("new_nodes_created") or 0)
         knowledge_results = knowledge_payload.get("results") or []
+        set_runtime_values({"stage_progress": "1/1"})
         _set_stage(
             "writing_alert",
             student_name=student_name,
@@ -414,17 +492,28 @@ def run_agent_cycle(force_full: bool = False, verbose: bool = True) -> dict:
             }
         )
 
-    set_runtime_value("last_processed_note_id", max(note["id"] for note in new_notes))
+    # Only advance checkpoint to what we actually processed this cycle
+    processed_note_ids = [n["id"] for _, n in cycle_notes]
+    set_runtime_value("last_processed_note_id", max(processed_note_ids))
     set_runtime_value("last_cycle_at", cycle_started_at)
     set_runtime_value("last_cycle_student_count", len(processed_students))
+    remaining = len(new_notes) - len(cycle_notes)
     _set_stage(
         "cycle_complete",
-        message=f"Completed {len(new_notes)} note(s) across {len(processed_students)} student(s).",
+        message=f"Processed {len(cycle_notes)} note(s) across {len(processed_students)} student(s)."
+        + (f" {remaining} queued for next cycle." if remaining > 0 else ""),
     )
+    # Clear stale progress values
+    set_runtime_values({
+        "stage_progress": "",
+        "enrich_progress": "",
+        "enrich_query_progress": "",
+        "enrich_student": "",
+    })
 
     return {
         "cycle_started_at": cycle_started_at,
-        "new_notes": len(new_notes),
+        "new_notes": len(cycle_notes),
         "students_processed": len(processed_students),
         "new_knowledge_nodes": total_knowledge_nodes,
         "alerts_open": len(get_alerts(status="open")),

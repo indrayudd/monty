@@ -3,6 +3,7 @@ import { useState } from "react";
 import { BehavioralKGPanel } from "./components/BehavioralKGPanel";
 import { LiveOpsColumn } from "./components/LiveOpsColumn";
 import { StageRail } from "./components/StageRail";
+import { IngestionWidget } from "./components/IngestionWidget";
 import { StudentTimeline } from "./components/StudentTimeline";
 import { IncidentDrawer } from "./components/IncidentDrawer";
 import type { StudentIncident } from "./lib/api";
@@ -13,12 +14,14 @@ export default function LivePage() {
 
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col gap-1.5 p-1.5">
+      {/* Ingestion stats bar */}
+      <IngestionWidget />
       {/* Top Zone: two columns */}
-      <div className="flex gap-1.5" style={{ height: 540 }}>
+      <div className="flex gap-1.5" style={{ height: 520 }}>
         <div className="flex-1 min-w-0 rounded overflow-hidden">
           <BehavioralKGPanel selectedSlug={selectedSlug} onSelectNode={setSelectedSlug} />
         </div>
-        <LiveOpsColumn />
+        <LiveOpsColumn highlightSlug={selectedSlug} onSelectNode={setSelectedSlug} />
       </div>
       {/* Stage Rail */}
       <StageRail />

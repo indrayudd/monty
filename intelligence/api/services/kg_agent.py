@@ -257,8 +257,13 @@ def enrich_student_knowledge(
 ) -> dict:
     existing = _wiki_paper_entries(student_name=student_name, query=assessment.get("behavioral_patterns"), limit=6)
 
-    # Phase 3: third trigger — curiosity gate fires for any behavioral node in the assessment
-    curious_nodes: list[str] = _curious_nodes_for_assessment(assessment)
+    # Phase 3: use pre-evaluated curiosity gate results passed via assessment["behavioral_nodes"]
+    # (evaluated once in self_improve.py — no double evaluation)
+    curious_nodes: list[str] = []
+    for n in (assessment.get("behavioral_nodes") or []):
+        if isinstance(n, dict):
+            slug_full = f"{n.get('type', 'behaviors')}/{n.get('slug', '')}"
+            curious_nodes.append(slug_full)
 
     if existing and len(existing) >= 2 and not emergency_terms and not curious_nodes:
         if verbose:
@@ -326,7 +331,17 @@ def enrich_student_knowledge(
     )
 
     new_nodes = 0
-    for query in ordered_queries[:3]:
+    total_queries = min(3, len(ordered_queries))
+    for qi, query in enumerate(ordered_queries[:3]):
+        # Update sub-step progress for the frontend progress bar
+        try:
+            from intelligence.api.services.ghost_client import set_runtime_values
+            set_runtime_values({
+                "enrich_query_progress": f"{qi + 1}/{total_queries}",
+                "enrich_query_text": query[:60],
+            })
+        except Exception:
+            pass
         if verbose:
             request_url = client.build_url(
                 OPENALEX_WORKS_URL,
@@ -339,13 +354,18 @@ def enrich_student_knowledge(
             )
             print(f"[kg-agent] {student_name}: OpenAlex search -> {query}", flush=True)
             print(f"[kg-agent][http] GET {request_url}", flush=True)
-        search_resp = client.search_works(
-            topic_query=query,
-            per_page=10,
-            extra_filter=OPENALEX_FILTER,
-            select=OPENALEX_SELECT,
-        )
-        candidates = search_resp.get("results", [])
+        try:
+            search_resp = client.search_works(
+                topic_query=query,
+                per_page=10,
+                extra_filter=OPENALEX_FILTER,
+                select=OPENALEX_SELECT,
+            )
+            candidates = search_resp.get("results", [])
+        except Exception as exc:
+            if verbose:
+                print(f"[kg-agent] {student_name}: OpenAlex query failed: {exc}", flush=True)
+            candidates = []
         if verbose:
             print(
                 f"[kg-agent] {student_name}: OpenAlex returned {len(candidates)} candidate(s) for '{query}'",

@@ -10,12 +10,13 @@ from pydantic import BaseModel
 from intelligence.api.services.demo_runtime import bootstrap_demo, get_demo_overview, reset_demo, start_demo, stop_demo
 from intelligence.api.services.ghost_client import (
     _conn,
+    count_notes,
     ensure_agent_tables,
     ensure_notes_table,
     get_alerts,
     get_all_profiles,
     get_runtime_state,
-    get_student_literature,
+    get_runtime_value,
     get_student_profile,
     get_student_snapshots,
     list_behavioral_nodes,
@@ -27,6 +28,36 @@ from intelligence.api.services.ghost_client import (
 )
 from intelligence.api.services.kg_agent import query_knowledge_graph
 from intelligence.api.services.self_improve import run_agent_cycle
+from intelligence.api.services.wiki_paths import WIKI_ROOT
+
+
+def _load_wiki_papers(student_name: str | None = None) -> list[dict]:
+    """Load research papers from wiki/sources/openalex/*.md, optionally filtered by student."""
+    import frontmatter
+
+    papers_dir = WIKI_ROOT / "sources" / "openalex"
+    if not papers_dir.exists():
+        return []
+    results = []
+    for path in sorted(papers_dir.glob("*.md")):
+        try:
+            post = frontmatter.load(str(path))
+        except Exception:
+            continue
+        meta = post.metadata
+        if student_name and (meta.get("fetched_for_student") or "").lower() != student_name.lower():
+            continue
+        results.append({
+            "title": meta.get("title", path.stem),
+            "authors": meta.get("authors", []),
+            "year": meta.get("publication_year"),
+            "cited_by_count": meta.get("cited_by_count", 0),
+            "landing_page_url": meta.get("landing_page_url", ""),
+            "openalex_id": meta.get("openalex_id", path.stem),
+            "fetched_for_student": meta.get("fetched_for_student", ""),
+            "fetched_for_query": meta.get("fetched_for_query", ""),
+        })
+    return results
 
 
 class AgentRunRequest(BaseModel):
@@ -62,6 +93,39 @@ def startup() -> None:
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "monty-intelligence"}
+
+
+@app.get("/api/ingestion-stats")
+def ingestion_stats():
+    """Note ingestion pipeline stats: total notes, last processed, backlog."""
+    total = count_notes()
+    last_processed = int(get_runtime_value("last_processed_note_id", "0") or "0")
+    # Count actual unprocessed rows (ID-based, not total minus processed)
+    backlog = 0
+    try:
+        conn = _conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM ingested_observations WHERE id > ?",
+                (last_processed,),
+            )
+            row = cur.fetchone()
+            backlog = int((row["cnt"] if isinstance(row, dict) else row[0]) if row else 0)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return {
+        "total_notes": total,
+        "processed": total - backlog,
+        "backlog": backlog,
+        "stage": get_runtime_value("current_stage", "idle"),
+        "current_student": get_runtime_value("current_student", ""),
+        "enrich_progress": get_runtime_value("enrich_progress", ""),
+        "enrich_query_progress": get_runtime_value("enrich_query_progress", ""),
+        "stage_progress": get_runtime_value("stage_progress", ""),
+    }
 
 
 @app.get("/api/flags")
@@ -113,13 +177,20 @@ def student_literature(student_name: str):
     profile = get_student_profile(student_name)
     if not profile:
         raise HTTPException(404, f"Student '{student_name}' not found")
-    papers = get_student_literature(student_name)
+    papers = _load_wiki_papers(student_name=student_name)
     return {
         "student_name": student_name,
         "severity": profile["current_severity"],
         "behavioral_patterns": profile["latest_patterns"],
         "papers": papers,
     }
+
+
+@app.get("/api/research-papers")
+def all_research_papers():
+    """Return ALL research papers from wiki/sources/openalex/."""
+    papers = _load_wiki_papers()
+    return {"papers": papers, "count": len(papers)}
 
 
 @app.get("/api/alerts")
@@ -189,7 +260,9 @@ def demo_overview():
 @app.get("/api/behavioral-graph")
 def behavioral_graph(min_support: int = 1):
     nodes = list_behavioral_nodes()
-    edges = list_behavioral_edges(min_support=min_support)
+    # Research edges always included regardless of min_support (backed by literature, not frequency)
+    all_edges = list_behavioral_edges(min_support=1)
+    edges = [e for e in all_edges if e.get("source") == "research" or e.get("support_count", 0) >= min_support]
     return {"nodes": nodes, "edges": edges}
 
 
@@ -201,8 +274,7 @@ def student_graph(student_name: str, limit: int = 50):
 
 @app.get("/api/student-graph/{student_name}/research")
 def student_graph_research(student_name: str):
-    # Phase 0: returns existing literature rows. Phase 3 enriches via wiki sources/openalex/.
-    return {"student_name": student_name, "papers": get_student_literature(student_name)}
+    return {"student_name": student_name, "papers": _load_wiki_papers(student_name=student_name)}
 
 
 @app.get("/api/personas")
@@ -512,5 +584,11 @@ def admin_purge():
         ["git", "checkout", "--", "wiki/log.md", "wiki/index.md", "wiki/behavioral/_index.md"],
         cwd=str(WIKI_ROOT.parent), capture_output=True,
     )
+
+    # 4. Ensure streamer is unpaused so notes flow immediately after purge
+    try:
+        set_runtime_overrides({"_paused": False})
+    except Exception:
+        pass
 
     return {"status": "purged", "message": "All data tables truncated. Wiki generated content removed. Personas and skeleton preserved."}

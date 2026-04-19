@@ -2,61 +2,65 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 
-const KEYS = [
-  "novelty",
-  "recurrence_gap",
-  "cross_student",
-  "surprise",
-  "severity_weight",
-  "recency",
-];
-const DEFAULTS: Record<string, number> = {
-  novelty: 0.2,
-  recurrence_gap: 0.2,
-  cross_student: 0.2,
-  surprise: 0.15,
-  severity_weight: 0.15,
-  recency: 0.1,
+const PRESETS: Record<string, Record<string, number>> = {
+  less: {
+    novelty: 0.10,
+    recurrence_gap: 0.10,
+    cross_student: 0.10,
+    surprise: 0.08,
+    severity_weight: 0.08,
+    recency: 0.05,
+  },
+  standard: {
+    novelty: 0.20,
+    recurrence_gap: 0.20,
+    cross_student: 0.20,
+    surprise: 0.15,
+    severity_weight: 0.15,
+    recency: 0.10,
+  },
+  more: {
+    novelty: 0.30,
+    recurrence_gap: 0.30,
+    cross_student: 0.30,
+    surprise: 0.22,
+    severity_weight: 0.22,
+    recency: 0.15,
+  },
 };
 
 export function CuriosityTuning() {
-  const [open, setOpen] = useState(false);
-  const [w, setW] = useState<Record<string, number>>({ ...DEFAULTS });
+  const [active, setActive] = useState<string>("standard");
 
-  const update = (k: string, v: number) => {
-    const next = { ...w, [k]: v };
-    setW(next);
-    api.curiosityWeights({ [k]: v }).catch(() => {});
+  const apply = (preset: string) => {
+    setActive(preset);
+    api.curiosityWeights(PRESETS[preset]).catch(() => {});
   };
 
   return (
-    <div className="mt-4 border border-white/10 rounded">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full text-left px-3 py-2 text-xs text-white/70 font-mono"
-      >
-        {open ? "▼" : "▶"} Curiosity tuning
-      </button>
-      {open && (
-        <div className="p-3 space-y-2">
-          {KEYS.map((k) => (
-            <div key={k}>
-              <label className="block text-[10px] text-white/60 font-mono">
-                {k}: {w[k].toFixed(2)}
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={0.5}
-                step={0.01}
-                value={w[k]}
-                onChange={(e) => update(k, parseFloat(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="mt-4 border border-white/10 rounded px-3 py-2">
+      <div className="text-[10px] text-white/50 font-mono mb-2 uppercase tracking-wider">
+        Curiosity
+      </div>
+      <div className="flex gap-1">
+        {(["less", "standard", "more"] as const).map((preset) => (
+          <button
+            key={preset}
+            onClick={() => apply(preset)}
+            className={`flex-1 text-[10px] font-mono py-1.5 rounded transition-colors ${
+              active === preset
+                ? preset === "more"
+                  ? "bg-amber-600/30 text-amber-300 border border-amber-500/30"
+                  : preset === "less"
+                    ? "bg-blue-600/30 text-blue-300 border border-blue-500/30"
+                    : "bg-white/15 text-white border border-white/20"
+                : "bg-white/5 text-white/40 hover:text-white/70 hover:bg-white/10 border border-transparent"
+            }`}
+          >
+            {preset === "less" ? "Less" : preset === "standard" ? "Standard" : "More"}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

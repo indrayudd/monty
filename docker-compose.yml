@@ -1,0 +1,17 @@
+services:
+  monty:
+    image: monty:latest
+    container_name: monty
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=
+    volumes:
+      - ./data:/app/data
+      - ./wiki:/app/wiki
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from intelligence.api.services.ghost_client import ensure_agent_tables
+from intelligence.api.services.ghost_client import ensure_agent_tables, set_runtime_values
 from intelligence.api.services.kg_agent import discover_research_edges
 from intelligence.api.services.self_improve import run_agent_cycle
 
@@ -42,13 +42,31 @@ def main(argv: list[str] | None = None) -> int:
         # well-supported but disconnected behavioral nodes.
         if summary["new_notes"] == 0:
             try:
+                set_runtime_values({
+                    "current_stage": "researching_edges",
+                    "current_student": "",
+                    "stage_message": "Searching for research-backed connections between behavioral nodes.",
+                })
                 research_result = discover_research_edges(verbose=args.verbose, max_pairs=2)
+                if research_result["edges_created"] > 0:
+                    set_runtime_values({
+                        "current_stage": "research_edge_found",
+                        "stage_message": f"Created {research_result['edges_created']} research edge(s) from {research_result['papers_fetched']} paper(s).",
+                    })
+                    # Hold for 3s so the UI can see the glow
+                    time.sleep(3)
                 print(
                     "[agent-loop] idle research-edges: "
                     f"checked={research_result['pairs_checked']} "
                     f"created={research_result['edges_created']} "
                     f"papers={research_result['papers_fetched']}"
                 )
+                # Reset to idle after research finishes
+                set_runtime_values({
+                    "current_stage": "waiting_for_note",
+                    "current_student": "",
+                    "stage_message": "Watching for the next classroom observation.",
+                })
             except Exception as exc:
                 print(f"[agent-loop] research-edges error: {exc}")
 

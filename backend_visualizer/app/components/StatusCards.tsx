@@ -1,12 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 
 type RuntimeStatus = {
   current_stage?: string;
   current_student?: string;
-  notes_per_second?: number;
-  students_processing?: number;
   [k: string]: unknown;
 };
 
@@ -30,32 +28,35 @@ function getStageIndex(stage: string): number {
 export function StatusCards() {
   const [runtime, setRuntime] = useState<RuntimeStatus>({});
   const [graph, setGraph] = useState<GraphCounts>({ nodes: 0, edges: 0, studentsCount: 0 });
-  const [prevStage, setPrevStage] = useState<string>("");
   const [notesPerSec, setNotesPerSec] = useState<number>(0);
-  const [lastTick, setLastTick] = useState<number>(Date.now());
-  const [noteCount, setNoteCount] = useState<number>(0);
+  const [cycleCount, setCycleCount] = useState<number>(0);
+  const prevNoteCountRef = useRef<number>(0);
+  const prevTickRef = useRef<number>(Date.now());
 
   useEffect(() => {
     const tick = async () => {
       try {
-        const [overview, bgraph] = await Promise.all([
+        const [overview, bgraph, stats] = await Promise.all([
           api.demoOverview() as Promise<{ runtime?: RuntimeStatus }>,
           api.behavioralGraph(1),
+          api.ingestionStats(),
         ]);
         const rt = overview?.runtime || {};
         setRuntime(rt);
 
-        const stage = rt.current_stage || "";
-        if (stage !== prevStage) {
-          const now = Date.now();
-          const elapsed = (now - lastTick) / 1000;
-          if (elapsed > 0) setNotesPerSec(parseFloat((1 / elapsed).toFixed(2)));
-          setPrevStage(stage);
-          setLastTick(now);
-          setNoteCount(c => c + 1);
+        // Calculate real notes/sec from note count delta
+        const currentNotes = stats.total_notes;
+        const now = Date.now();
+        const elapsed = (now - prevTickRef.current) / 1000;
+        if (elapsed > 0 && prevNoteCountRef.current > 0) {
+          const delta = currentNotes - prevNoteCountRef.current;
+          setNotesPerSec(parseFloat((delta / elapsed).toFixed(2)));
         }
+        prevNoteCountRef.current = currentNotes;
+        prevTickRef.current = now;
 
-        const studentSet = new Set(bgraph.nodes.map(n => n.students_count));
+        setCycleCount(parseInt(String(rt.last_cycle_student_count || "0")) || 0);
+
         const avgStudents = bgraph.nodes.length > 0
           ? bgraph.nodes.reduce((a, n) => a + n.students_count, 0) / bgraph.nodes.length
           : 0;
@@ -64,15 +65,12 @@ export function StatusCards() {
           edges: bgraph.edges.length,
           studentsCount: Math.round(avgStudents),
         });
-      } catch {
-        // silently degrade
-      }
+      } catch {}
     };
     tick();
-    const i = setInterval(tick, 1500);
+    const i = setInterval(tick, 2000);
     return () => clearInterval(i);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prevStage, lastTick]);
+  }, []);
 
   const stage = runtime.current_stage || "idle";
   const student = runtime.current_student || "—";
@@ -117,7 +115,7 @@ export function StatusCards() {
           </div>
           <div className="text-center">
             <div className="font-mono text-lg text-cyan-200 font-semibold leading-none">{graph.studentsCount}</div>
-            <div className="font-mono text-[9px] text-white/40 mt-0.5">avg/node</div>
+            <div className="font-mono text-[9px] text-white/40 mt-0.5">avg students</div>
           </div>
         </div>
         <div className="font-mono text-[10px] text-white/30 mt-auto">behavioral knowledge graph</div>
@@ -135,13 +133,13 @@ export function StatusCards() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-xl text-emerald-300 font-semibold leading-none">
-              {noteCount}
+              {cycleCount}
             </span>
-            <span className="font-mono text-[10px] text-white/40">cycles total</span>
+            <span className="font-mono text-[10px] text-white/40">students last cycle</span>
           </div>
         </div>
         <div className="font-mono text-[10px] text-emerald-400/50 mt-auto">
-          {stage !== "idle" ? "● processing" : "○ idle"}
+          {stage !== "idle" && stage !== "waiting_for_note" ? "● processing" : "○ idle"}
         </div>
       </div>
     </div>
