@@ -89,6 +89,7 @@ export function TopAppBar() {
         {link("/wiki", "Wiki")}
         {link("/console", "Console")}
         {link("/god-mode", "God Mode", true)}
+        {link("/about", "About")}
       </nav>
       <div className="ml-auto flex items-center gap-4 text-xs text-white/80 font-mono">
         <span className="text-white/50">{utc}</span>

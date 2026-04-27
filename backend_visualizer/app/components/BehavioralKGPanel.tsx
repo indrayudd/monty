@@ -7,6 +7,7 @@ import {
   type BehavioralNode,
   type BehavioralEdge,
 } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -199,7 +200,7 @@ export function BehavioralKGPanel({
     <div ref={containerRef} className="relative h-full w-full bg-zinc-950 overflow-hidden">
       <div className="absolute top-2 left-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono border border-white/10">
         <div className="font-semibold mb-1 text-white">
-          Behavioral KG <span className="text-white/40">(anonymized)</span>
+          Behavioral KG <span className="text-white/40">(anonymized)</span><InfoTip text="Force-directed graph of behavioral patterns extracted from classroom observations. Nodes are anonymized — no student names appear. Node size reflects how many observations support it. Pulsing red halo = high curiosity score (research triggered)." />
         </div>
         <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
           {Object.entries(TYPE_COLORS).map(([t, c]) => (
@@ -217,7 +218,7 @@ export function BehavioralKGPanel({
         className="absolute top-2 right-2 z-10 bg-black/70 rounded p-2 text-[11px] text-white/80 font-mono flex items-center gap-2 border border-white/10"
         title="min support = minimum number of supporting observations for an edge to render. Increase to hide weak/noise edges; decrease (=1) to show everything, including single-observation links."
       >
-        <label>min support</label>
+        <label>min support</label><InfoTip text="Minimum number of supporting observations for an edge to appear. Increase to hide weak/noisy connections; set to 1 to show everything." />
         <input
           type="number"
           min={1}
@@ -230,6 +231,7 @@ export function BehavioralKGPanel({
         <span className="ml-2 text-white/40">
           {data.nodes.length}n · {data.links.length}e
         </span>
+        <InfoTip text="Filter edges by source: 'observation' = from teacher notes, 'research' = from literature (dashed gray lines), 'all' = both." />
         <div className="ml-2 flex gap-0.5">
           {(["all", "observation", "research"] as const).map(f => (
             <button

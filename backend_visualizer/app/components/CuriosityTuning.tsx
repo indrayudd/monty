@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 const PRESETS: Record<string, Record<string, number>> = {
   less: {
@@ -41,6 +42,7 @@ export function CuriosityTuning() {
     <div className="mt-4 border border-white/10 rounded px-3 py-2">
       <div className="text-[10px] text-white/50 font-mono mb-2 uppercase tracking-wider">
         Curiosity
+        <InfoTip text="Controls how aggressively the system searches for research papers. 'Less' = fewer curiosity gate firings, 'More' = more aggressive research. Adjusts weights for novelty, recurrence, cross-student patterns, surprise, severity, and recency." />
       </div>
       <div className="flex gap-1">
         {(["less", "standard", "more"] as const).map((preset) => (

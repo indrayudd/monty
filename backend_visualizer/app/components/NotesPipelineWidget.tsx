@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type Note = { id: number; name: string; body: string; inserted_at: string };
 
@@ -38,7 +39,7 @@ export function NotesPipelineWidget() {
       {/* Streamer Status */}
       <div className="border border-white/10 rounded p-3 bg-zinc-950">
         <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-2">
-          Note Streamer
+          Note Streamer<InfoTip text="Status of the note generation process. The streamer creates synthetic teacher observations via LLM at the configured cadence. Control it from God Mode." />
         </div>
         <div className="flex items-center gap-2 mb-2">
           <span className={`w-2 h-2 rounded-full ${paused === false ? "bg-emerald-400 animate-pulse" : paused === true ? "bg-rose-400" : "bg-zinc-600"}`} />
@@ -67,7 +68,7 @@ export function NotesPipelineWidget() {
       {/* Recent Notes */}
       <div className="border border-white/10 rounded p-3 bg-zinc-950">
         <div className="text-[10px] font-mono text-white/40 uppercase tracking-wider mb-2">
-          Recent Notes (DB)
+          Recent Notes (DB)<InfoTip text="Latest observation notes stored in the database, shown with time since insertion. These are the raw inputs the agent loop processes." />
         </div>
         {notes.length === 0 && (
           <div className="text-[10px] font-mono text-white/25 italic">no notes yet</div>

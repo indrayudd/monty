@@ -6,6 +6,7 @@ import { StoryPresetRow } from "../components/StoryPresetRow";
 import { CuriosityTuning } from "../components/CuriosityTuning";
 import { ManualResearchTrigger } from "../components/ManualResearchTrigger";
 import { GodModeLiveFeed } from "../components/GodModeLiveFeed";
+import InfoTip from "../components/InfoTip";
 
 type Override = {
   slider?: number;
@@ -107,6 +108,7 @@ export default function GodModePage() {
         <section className="mb-4">
           <h2 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">
             Story Presets
+            <InfoTip text="Pre-configured classroom scenarios that adjust all persona sliders and activity weights at once. Use these to quickly simulate different classroom dynamics." />
           </h2>
           <StoryPresetRow />
         </section>
@@ -115,6 +117,7 @@ export default function GodModePage() {
         <section>
           <h2 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">
             Personas
+            <InfoTip text="Each persona is a simulated child with unique behavioral traits. Adjust their sliders, flavors, and activity weights to steer the simulation." />
           </h2>
           <div className="space-y-3">
             {personas.length === 0 && (
@@ -147,6 +150,7 @@ export default function GodModePage() {
           <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
               Note Generation
+              <InfoTip text="Controls the note streamer — the process that generates synthetic teacher observation notes. Stop/Start pauses or resumes note emission." />
             </div>
             <button
               onClick={handleToggleStream}
@@ -168,6 +172,7 @@ export default function GodModePage() {
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
               Agent Loop
+              <InfoTip text="The agent loop processes ingested notes: assesses behavior, updates the knowledge graph, fetches research papers, and generates alerts. Pausing stops all processing." />
             </div>
             <button
               onClick={async () => {
@@ -209,12 +214,14 @@ export default function GodModePage() {
             className="flex-1 px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-white/70 font-mono transition-colors"
           >
             Reindex wiki
+            <InfoTip text="Rebuilds the SQLite index tables from wiki/ markdown files. Use if the database gets out of sync with the wiki." />
           </button>
           <button
             onClick={handlePurge}
             className="flex-1 px-3 py-2 rounded bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-xs text-rose-300 font-mono transition-colors"
           >
             Purge everything
+            <InfoTip text="Nuclear option: truncates all database tables and wipes all wiki content except persona definitions. The pipeline rebuilds from scratch." />
           </button>
         </div>
       </main>
@@ -278,6 +285,7 @@ function NoteCadenceControl() {
       </div>
       <div className="text-[9px] text-white/40 font-mono">
         current: {formatCadence(cadence)} · max 2 notes/sec
+        <InfoTip text="How often the streamer generates a new note. 'Auto' uses random 2–8s intervals. Higher values slow down the simulation." />
       </div>
     </div>
   );

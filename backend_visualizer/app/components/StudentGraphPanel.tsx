@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { forceX, forceY } from "d3-force";
 import { api, type StudentIncident, type BehavioralNode } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -263,6 +264,7 @@ export function StudentGraphPanel({
         <div className="text-white/50">
           {incidents.length} incidents · {data.nodes.length} nodes touched
         </div>
+        <InfoTip text="Per-student subgraph showing only the behavioral nodes and incidents linked to this child. Colored by node type." />
       </div>
 
       {/* Hover legend — shows node type colors for this persona */}

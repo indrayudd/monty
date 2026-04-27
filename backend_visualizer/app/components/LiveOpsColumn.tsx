@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type Persona, type StudentIncident } from "../lib/api";
 import { StudentGraphPanel } from "./StudentGraphPanel";
 import { StudentResearchPanel } from "./StudentResearchPanel";
+import InfoTip from "./InfoTip";
 
 type OpsView = "status" | "graph" | "research";
 
@@ -81,7 +82,7 @@ export function LiveOpsColumn({
       {view === "status" && (
         <div className="p-3 flex flex-col gap-4 overflow-y-auto flex-1">
           <section>
-            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Cycle Stage</h3>
+            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Cycle Stage<InfoTip text="Current phase of the agent's processing cycle and which student is being analyzed right now." /></h3>
             <div className="text-sm font-semibold text-white">{stage.replace(/_/g, " ")}</div>
             <div className="text-xs text-white/60 mt-1">&gt; {student}</div>
             <div className="flex flex-wrap gap-1 mt-2">
@@ -94,7 +95,7 @@ export function LiveOpsColumn({
           </section>
 
           <section>
-            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Student Focus</h3>
+            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Student Focus<InfoTip text="The student currently being processed by the agent loop." /></h3>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
               <span className="text-sm text-white font-medium">{student}</span>
@@ -102,7 +103,7 @@ export function LiveOpsColumn({
           </section>
 
           <section>
-            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Research Queue</h3>
+            <h3 className="text-[10px] font-mono text-white/50 uppercase tracking-wider mb-2">Research Queue<InfoTip text="Recent curiosity gate evaluations. Score ≥ 0.70 triggers a research paper fetch from OpenAlex. Green badge = research was triggered." /></h3>
             {events.length === 0 && (
               <div className="text-[10px] text-white/30 font-mono">no research queued</div>
             )}

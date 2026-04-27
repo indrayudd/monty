@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api, type WikiPage } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 export function WikiPageRenderer({
   path,
@@ -103,12 +104,15 @@ export function WikiPageRenderer({
         <div className="text-xs text-white/50 font-mono truncate">
           {page.path}
         </div>
-        <button
-          onClick={() => setShowRaw((r) => !r)}
-          className="text-[10px] text-white/40 hover:text-white underline font-mono"
-        >
-          {showRaw ? "rendered" : "raw"}
-        </button>
+        <span className="flex items-center gap-1">
+          <button
+            onClick={() => setShowRaw((r) => !r)}
+            className="text-[10px] text-white/40 hover:text-white underline font-mono"
+          >
+            {showRaw ? "rendered" : "raw"}
+          </button>
+          <InfoTip text="Toggle between rendered markdown (with formatting) and raw source text (with frontmatter YAML metadata)." side="left" />
+        </span>
       </div>
       {!showRaw && Object.keys(page.frontmatter).length > 0 && (
         <details

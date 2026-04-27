@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type RuntimeStatus = {
   current_stage?: string;
@@ -80,7 +81,7 @@ export function StatusCards() {
     <div className="grid grid-cols-3 gap-3">
       {/* Cycle State */}
       <div className="rounded bg-zinc-950 border border-white/10 border-l-2 border-l-blue-500 p-3 flex flex-col gap-2">
-        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Cycle State</div>
+        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Cycle State<InfoTip text="Tracks the agent's current processing phase: ingest (read note) → assess (LLM severity rating) → profile (update student summary) → enrich (fetch research papers)." /></div>
         <div className="flex items-center gap-0 font-mono text-[11px]">
           {STAGES.map((s, i) => (
             <span key={s} className="flex items-center">
@@ -103,7 +104,7 @@ export function StatusCards() {
 
       {/* Graph State */}
       <div className="rounded bg-zinc-950 border border-white/10 border-l-2 border-l-cyan-400 p-3 flex flex-col gap-2">
-        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Graph State</div>
+        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Graph State<InfoTip text="Live counts from the behavioral knowledge graph. Nodes = unique behavioral patterns, Edges = relationships between them, Avg students = mean number of children linked per node." /></div>
         <div className="grid grid-cols-3 gap-1 mt-1">
           <div className="text-center">
             <div className="font-mono text-lg text-cyan-400 font-semibold leading-none">{graph.nodes}</div>
@@ -123,7 +124,7 @@ export function StatusCards() {
 
       {/* Throughput */}
       <div className="rounded bg-zinc-950 border border-white/10 border-l-2 border-l-emerald-500 p-3 flex flex-col gap-2">
-        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Throughput</div>
+        <div className="text-[10px] font-mono text-white/50 uppercase tracking-wider">Throughput<InfoTip text="Pipeline throughput metrics. Notes/sec = rate of new observations entering the system. Students last cycle = how many children were processed in the most recent agent cycle." /></div>
         <div className="flex flex-col gap-1.5 mt-1">
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-xl text-emerald-400 font-semibold leading-none">

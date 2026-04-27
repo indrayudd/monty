@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 const STAGES = [
   "waiting_for_note",
@@ -52,6 +53,7 @@ export function StageRail() {
 
   return (
     <div className="h-12 flex items-center justify-between px-4 bg-zinc-950 border-y border-white/10 font-mono text-[11px] shrink-0 overflow-x-auto">
+      <InfoTip text="Pipeline progress for the current agent cycle. Each note goes through: waiting → reassessing → updating profile → enriching knowledge → writing alert → cycle complete. Research edges are discovered during idle time." />
       {displayStages.map((s, idx) => {
         const active = idx === activeDisplayIdx;
         const passed = activeDisplayIdx > idx;

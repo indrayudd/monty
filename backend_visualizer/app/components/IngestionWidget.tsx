@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type Stats = {
   total_notes: number;
@@ -55,6 +56,7 @@ export function IngestionWidget() {
           <span className={hasBacklog ? "text-amber-300" : "text-emerald-400"}>
             {stats.backlog}
           </span>
+          <InfoTip text="Notes = total generated, Processed = analyzed by the agent, Backlog = waiting to be processed. Amber backlog means the agent is falling behind." />
         </div>
         {stats.current_student && stats.stage !== "waiting_for_note" && stats.stage !== "cycle_complete" && (
           <>

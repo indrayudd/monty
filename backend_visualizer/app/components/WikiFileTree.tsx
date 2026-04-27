@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api, type WikiTreeFile } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type Node = {
   name: string;
@@ -147,7 +148,7 @@ export function WikiFileTree({
 
   return (
     <aside className="w-[300px] shrink-0 border-r border-white/10 bg-zinc-950 overflow-y-auto">
-      <div className="px-2 pt-2 pb-1" style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)" }}>FILES</div>
+      <div className="px-2 pt-2 pb-1 flex items-center gap-1" style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)" }}>FILES<InfoTip text="Markdown files written by the agent to wiki/. Green pulse = modified in the last 30 seconds. This is the source of truth — the database is derived from these files." /></div>
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}

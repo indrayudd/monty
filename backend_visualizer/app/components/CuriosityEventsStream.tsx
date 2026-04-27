@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, type CuriosityEvent } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 export function CuriosityEventsStream() {
   const [events, setEvents] = useState<CuriosityEvent[]>([]);
@@ -24,7 +25,7 @@ export function CuriosityEventsStream() {
   return (
     <section className="bg-zinc-950 border border-white/10 rounded p-3 font-mono text-xs">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-white/50">Curiosity events</div>
+        <div className="text-white/50">Curiosity events<InfoTip text="Each row is a curiosity gate evaluation for a behavioral node. 'fire' = score exceeded 0.70 threshold and research was triggered. The mini bar chart shows the 6 scoring factors: novelty, recurrence gap, cross-student frequency, surprise, severity weight, and recency." /></div>
         <div className="text-white/30 text-[10px]">
           {events.length} loaded
         </div>

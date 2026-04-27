@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 export function ManualResearchTrigger() {
   const [slug, setSlug] = useState("");
@@ -26,6 +27,7 @@ export function ManualResearchTrigger() {
     <div className="mt-4 border border-white/10 rounded p-3">
       <div className="text-xs text-white/70 font-mono mb-2">
         Manual research trigger
+        <InfoTip text="Manually evaluate the curiosity gate for a specific behavioral node. Enter a node slug (e.g. 'peer-takes-material') to check if it would trigger research and see its curiosity score." />
       </div>
       <div className="flex gap-2">
         <input

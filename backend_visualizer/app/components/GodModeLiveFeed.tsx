@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type FeedLine = {
   ts: string;
@@ -138,6 +139,7 @@ export function GodModeLiveFeed() {
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10">
         <span className="text-[10px] font-mono text-white/50 uppercase tracking-wider">
           Live Event Feed
+          <InfoTip text="Real-time stream of pipeline events. Amber = stage transitions, green = new notes emitted, cyan = research edge discoveries. Shows the last 80 events." />
         </span>
         <span className="text-[9px] font-mono text-white/30">
           {lines.length}/80

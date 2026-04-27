@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type LogCategory = "all" | "assessment" | "graph" | "curiosity" | "research";
 
@@ -121,7 +122,7 @@ export function TraceLog() {
       {/* Header */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 shrink-0">
         <span className="font-mono text-[11px] text-white/60 shrink-0">
-          Trace Log · Node+Edge Events
+          Trace Log · Node+Edge Events<InfoTip text="Streaming log of agent pipeline events, color-coded by category. Filter by type to focus on specific pipeline stages. Retains the last 200 entries." />
         </span>
         <div className="flex items-center gap-1 flex-1">
           {FILTER_CHIPS.map(cat => (

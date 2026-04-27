@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 // Behavioral KG palette (7 types)
 const LEGEND_ITEMS = [
@@ -101,7 +102,7 @@ export function WikiBacklinks({ path }: { path: string | null }) {
   return (
     <aside className="w-[320px] shrink-0 border-l border-white/10 bg-zinc-950 overflow-y-auto p-3 text-xs text-white/70 font-mono flex flex-col gap-4">
       {/* GRAPH LINKS header */}
-      <div style={HEADER_STYLE}>Graph Links</div>
+      <div className="flex items-center gap-1" style={HEADER_STYLE}>Graph Links<InfoTip text="Shows how this wiki page connects to others. Incoming = pages that reference this one. Outgoing = pages this one links to. Helps trace behavioral pattern relationships." /></div>
 
       {/* Backlinks (incoming) */}
       <section>

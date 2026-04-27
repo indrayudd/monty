@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type Paper = {
   openalex_id?: string;
@@ -44,7 +45,7 @@ export function StudentResearchPanel({ studentName }: { studentName: string }) {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-2 bg-zinc-950">
       <div className="text-[11px] text-white/50 font-mono mb-2">
-        Research the agent has fetched for {studentName}
+        Research the agent has fetched for {studentName}<InfoTip text="Academic papers fetched from OpenAlex when the curiosity gate fires for this student's behavioral nodes. Papers are filtered to early childhood education topics published after 2010." />
         {papers.length > 0 && (
           <span className="ml-2 text-white/40">· {papers.length} paper(s)</span>
         )}

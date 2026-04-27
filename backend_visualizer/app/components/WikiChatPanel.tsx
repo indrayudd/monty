@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import InfoTip from "./InfoTip";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -130,7 +131,7 @@ export function WikiChatPanel({
     <aside className="w-[380px] shrink-0 border-l border-white/10 bg-zinc-950 flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-        <span className="text-xs font-mono text-white/50">Ask Monty</span>
+        <span className="text-xs font-mono text-white/50 flex items-center gap-1">Ask Monty<InfoTip text="Chat with an AI assistant that has context from the wiki and behavioral knowledge graph. Select text on a wiki page to include it as context in your question." /></span>
         <div className="flex items-center gap-2">
           {messages.length > 0 && (
             <button

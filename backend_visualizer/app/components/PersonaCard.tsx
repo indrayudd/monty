@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, type Persona } from "../lib/api";
+import InfoTip from "./InfoTip";
 
 type Override = {
   slider?: number;
@@ -116,6 +117,7 @@ export function PersonaCard({
 
       <label className="block text-[10px] text-white/60 mb-1 font-mono">
         Functional ↔ Dysfunctional ({slider.toFixed(1)})
+        <InfoTip text="Slides the child's regulatory state from calm/functional (-1) to stressed/dysregulated (+1). Affects the tone and severity of generated notes." />
       </label>
       <input
         type="range"
@@ -145,6 +147,7 @@ export function PersonaCard({
             </option>
           ))}
         </select>
+        <InfoTip text="The type of stress response this child exhibits when dysregulated." side="bottom" />
         <input
           type="number"
           min={0}
@@ -159,8 +162,9 @@ export function PersonaCard({
           className="bg-zinc-800 text-xs px-2 py-1 rounded border border-white/10 w-16 text-white font-mono"
           title="activity weight (0 = paused, 1 = normal, 2 = double)"
         />
+        <InfoTip text="How often this child appears in the note stream. 0 = disabled, 1 = normal frequency, 2 = twice as often." side="bottom" />
       </div>
-      <div className="flex gap-1 mt-2">
+      <div className="flex gap-1 mt-2 items-center">
         {(["neutral", "problematic", "emergency", "surprise"] as const).map(
           (f) => (
             <button
@@ -183,9 +187,11 @@ export function PersonaCard({
             </button>
           ),
         )}
+        <InfoTip text="Inject a one-shot directive into this child's next note. Neutral = normal, Problematic = mild issue, Emergency = crisis, Surprise = unexpected event. Consumed after one use." side="left" />
       </div>
       <div className="flex gap-1 mt-2 items-center">
         <span className="text-[10px] text-white/50 font-mono">interact:</span>
+        <InfoTip text="Force this child's next note to include a peer interaction with the selected classmate. One-shot — cleared after use." side="left" />
         <select
           value={lastInteract || ""}
           onChange={async (e) => {
