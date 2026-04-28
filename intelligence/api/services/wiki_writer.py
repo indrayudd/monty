@@ -160,14 +160,36 @@ def _write_behavioral_index() -> None:
             sections.append("\n_(empty)_\n")
             continue
         for f in files:
-            sections.append(f"- [{f.stem}]({ntype}/{f.name})\n")
+            try:
+                meta = frontmatter.load(f).metadata
+                title = meta.get("title", f.stem)
+                sc = meta.get("support_count", 0)
+                stc = meta.get("students_count", 0)
+                sections.append(
+                    f"- [{f.stem}]({ntype}/{f.name})"
+                    f" — {title} (support: {sc}, students: {stc})\n"
+                )
+            except Exception:
+                sections.append(f"- [{f.stem}]({ntype}/{f.name})\n")
 
     sections.append("\n## Edges\n")
     edges_dir = behavioral_root / "_edges"
     edges = sorted(edges_dir.glob("*.md"))
     if edges:
         for f in edges:
-            sections.append(f"- [{f.stem}](_edges/{f.name})\n")
+            try:
+                meta = frontmatter.load(f).metadata
+                src = meta.get("src_slug", "?")
+                rel = meta.get("rel", "?")
+                dst = meta.get("dst_slug", "?")
+                sc = meta.get("support_count", 0)
+                sections.append(
+                    f"- {src} —[{rel}]→ {dst}"
+                    f" (support: {sc})"
+                    f" [{f.stem}](_edges/{f.name})\n"
+                )
+            except Exception:
+                sections.append(f"- [{f.stem}](_edges/{f.name})\n")
     else:
         sections.append("\n_(empty)_\n")
 
