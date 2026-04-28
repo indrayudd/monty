@@ -79,9 +79,28 @@ export default function AboutPage() {
 
         {/* Hero */}
         <h1 className="text-3xl font-bold tracking-tight mb-2">Monty</h1>
-        <p className="text-lg text-white/60 font-mono mb-10">
+        <p className="text-lg text-white/60 font-mono mb-6">
           Autonomous behavioral intelligence for early childhood classrooms
         </p>
+
+        {/* Hero stat */}
+        <div className="border border-amber-400/20 rounded-lg bg-amber-400/5 px-5 py-4 mb-10">
+          <div className="flex items-baseline gap-3 mb-2">
+            <span className="text-2xl font-bold text-amber-400">2,400+</span>
+            <span className="text-[15px] text-white/70">wiki pages generated autonomously</span>
+          </div>
+          <div className="text-[13px] text-white/50 leading-relaxed">
+            From ~150 ingested observation notes. Each note triggers behavioral
+            assessment, node extraction, incident documentation, profile
+            updates, and research retrieval. An equivalent manual effort would
+            take ~150 hours of skilled documentation work: reviewing child
+            history, categorizing behavioral patterns, writing structured
+            records, and searching academic literature.
+          </div>
+          <div className="text-[11px] text-white/30 font-mono mt-2">
+            ~60 min of human work per note &times; ~150 notes = ~150 hrs replaced
+          </div>
+        </div>
 
         {/* What this is */}
         <section className="mb-10">
