@@ -77,7 +77,17 @@ def _write_root_index() -> None:
         sections.append(f"\n### {ntype.replace('_', ' ').title()}\n")
         for f in files:
             slug = f.stem
-            sections.append(f"- [{slug}](behavioral/{ntype}/{f.name})\n")
+            try:
+                meta = frontmatter.load(f).metadata
+                title = meta.get("title", slug)
+                sc = meta.get("support_count", 0)
+                stc = meta.get("students_count", 0)
+                sections.append(
+                    f"- [{slug}](behavioral/{ntype}/{f.name})"
+                    f" — {title} (support: {sc}, students: {stc})\n"
+                )
+            except Exception:
+                sections.append(f"- [{slug}](behavioral/{ntype}/{f.name})\n")
     if not has_any:
         sections.append("\n_(empty)_\n")
 
@@ -88,7 +98,20 @@ def _write_root_index() -> None:
         for sdir in student_dirs:
             display = sdir.name.replace("_", " ")
             inc_count = len(list((sdir / "incidents").glob("*.md"))) if (sdir / "incidents").exists() else 0
-            sections.append(f"- [{display}](students/{sdir.name}/profile.md) — {inc_count} incident(s)\n")
+            profile_path = sdir / "profile.md"
+            severity = "unknown"
+            trend = "unknown"
+            if profile_path.exists():
+                try:
+                    pmeta = frontmatter.load(profile_path).metadata
+                    severity = pmeta.get("current_severity", "unknown")
+                    trend = pmeta.get("trend", "unknown")
+                except Exception:
+                    pass
+            sections.append(
+                f"- [{display}](students/{sdir.name}/profile.md)"
+                f" — severity: {severity}, trend: {trend}, {inc_count} incident(s)\n"
+            )
     else:
         sections.append("\n_(empty)_\n")
 
@@ -102,7 +125,20 @@ def _write_root_index() -> None:
     papers = sorted(sources_dir.glob("*.md"))
     if papers:
         for f in papers:
-            sections.append(f"- [{f.stem}](sources/openalex/{f.name})\n")
+            try:
+                meta = frontmatter.load(f).metadata
+                title = meta.get("title", f.stem)
+                year = meta.get("publication_year", "?")
+                cited = meta.get("cited_by_count", 0)
+                query = meta.get("fetched_for_query", "")
+                query_short = query[:60] + "..." if len(query) > 60 else query
+                sections.append(
+                    f"- [{f.stem}](sources/openalex/{f.name})"
+                    f' — "{title}" ({year}, cited {cited}x'
+                    f"{f', query: {query_short}' if query_short else ''})\n"
+                )
+            except Exception:
+                sections.append(f"- [{f.stem}](sources/openalex/{f.name})\n")
     else:
         sections.append("\n_(empty)_\n")
 
