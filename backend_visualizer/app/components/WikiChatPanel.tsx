@@ -7,11 +7,84 @@ import InfoTip from "./InfoTip";
 export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  sources?: string[];
 };
 
 const BASE = typeof process.env.NEXT_PUBLIC_API_BASE_URL === "string"
   ? process.env.NEXT_PUBLIC_API_BASE_URL
   : "http://localhost:8000";
+
+function CitedMarkdown({
+  content,
+  sources,
+  onNavigate,
+}: {
+  content: string;
+  sources?: string[];
+  onNavigate?: (path: string) => void;
+}) {
+  // Replace [N] patterns with superscript markdown that ReactMarkdown can render
+  // We post-process the rendered output instead
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        // Intercept text nodes to inject citation superscripts
+        p: ({ children, ...props }) => (
+          <p {...props}>{processCitations(children, sources, onNavigate)}</p>
+        ),
+        li: ({ children, ...props }) => (
+          <li {...props}>{processCitations(children, sources, onNavigate)}</li>
+        ),
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+}
+
+function processCitations(
+  children: React.ReactNode,
+  sources?: string[],
+  onNavigate?: (path: string) => void,
+): React.ReactNode {
+  if (!sources || sources.length === 0) return children;
+
+  const processNode = (node: React.ReactNode): React.ReactNode => {
+    if (typeof node === "string") {
+      // Split on [N] patterns
+      const parts = node.split(/(\[\d+\])/g);
+      if (parts.length === 1) return node;
+      return parts.map((part, i) => {
+        const match = part.match(/^\[(\d+)\]$/);
+        if (match) {
+          const idx = parseInt(match[1]) - 1;
+          const sourcePath = sources[idx];
+          if (sourcePath) {
+            return (
+              <sup
+                key={i}
+                className="inline-flex items-center cursor-pointer ml-0.5"
+                title={sourcePath}
+                onClick={(e) => { e.stopPropagation(); onNavigate?.(sourcePath); }}
+              >
+                <span className="text-[9px] text-cyan-400/80 hover:text-cyan-300 font-mono">
+                  [{match[1]}]
+                </span>
+              </sup>
+            );
+          }
+        }
+        return part;
+      });
+    }
+    if (Array.isArray(node)) return node.map(processNode);
+    return node;
+  };
+
+  if (Array.isArray(children)) return children.map(processNode);
+  return processNode(children);
+}
 
 export function WikiChatPanel({
   currentPagePath,
@@ -21,6 +94,7 @@ export function WikiChatPanel({
   messages,
   setMessages,
   onClear,
+  onNavigate,
 }: {
   currentPagePath: string | null;
   onClose: () => void;
@@ -29,6 +103,7 @@ export function WikiChatPanel({
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   onClear: () => void;
+  onNavigate?: (path: string) => void;
 }) {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -96,15 +171,30 @@ export function WikiChatPanel({
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
+      let sourcesExtracted = false;
+      let sources: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
-        const content = accumulated;
+
+        // First line is JSON with sources
+        if (!sourcesExtracted && accumulated.includes("\n")) {
+          const nl = accumulated.indexOf("\n");
+          const firstLine = accumulated.slice(0, nl);
+          try {
+            const parsed = JSON.parse(firstLine);
+            if (parsed.sources) sources = parsed.sources;
+          } catch { /* not JSON, treat as content */ }
+          accumulated = accumulated.slice(nl + 1);
+          sourcesExtracted = true;
+        }
+
+        const content = sourcesExtracted ? accumulated : "";
         setMessages((prev) => {
           const next = [...prev];
-          next[next.length - 1] = { role: "assistant", content };
+          next[next.length - 1] = { role: "assistant", content, sources };
           return next;
         });
       }
@@ -160,8 +250,31 @@ export function WikiChatPanel({
                 {m.content}
               </div>
             ) : (
-              <div className="prose prose-invert prose-sm max-w-none text-white/80">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content || "\u2026"}</ReactMarkdown>
+              <div>
+                <div className="prose prose-invert prose-sm max-w-none text-white/80">
+                  <CitedMarkdown content={m.content || "\u2026"} sources={m.sources} onNavigate={onNavigate} />
+                </div>
+                {m.sources && m.sources.length > 0 && m.content && (
+                  <details className="mt-2 text-[10px] font-mono">
+                    <summary className="text-white/30 cursor-pointer hover:text-white/50 select-none">
+                      {m.sources.length} source{m.sources.length > 1 ? "s" : ""}
+                    </summary>
+                    <div className="mt-1 space-y-0.5 pl-2 border-l border-white/10">
+                      {m.sources.map((src, si) => (
+                        <div key={si} className="flex items-baseline gap-1.5">
+                          <span className="text-white/25 shrink-0">[{si + 1}]</span>
+                          <button
+                            onClick={() => onNavigate?.(src)}
+                            className="text-cyan-400/70 hover:text-cyan-300 truncate text-left"
+                            title={src}
+                          >
+                            {src}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
           </div>

@@ -20,11 +20,12 @@ CRITICAL RULES:
 1. For GENERAL behavioral questions (e.g., "What triggers emotional outbursts?", "How does self-regulation develop?"), answer ONLY from the anonymized behavioral knowledge graph. Do NOT mention any student by name. Use phrases like "children in the classroom", "a child", "some children".
 2. For STUDENT-SPECIFIC questions (e.g., "How is Mira doing?", "Tell me about Arjun's patterns"), you MAY reference that specific student's data.
 3. Never volunteer student names unprompted. If the user asks a general question, keep it general.
-4. Cite wiki page paths in brackets like [behavioral/antecedents/peer-disruption] when referencing specific knowledge.
+4. CITE your sources using numbered superscripts like [1], [2], [3] that correspond to the numbered source list provided below. Every factual claim should have at least one citation. Place the citation immediately after the claim.
 5. Be informative, direct, calm, and technically credible. Not overly conversational.
 6. If you can't answer from the available context, say so clearly and suggest what wiki pages might help.
+7. Do NOT include a sources/references section at the end. The UI renders source attributions automatically from the source numbers.
 
-You have access to the following context from the wiki:"""
+You have access to the following numbered sources from the wiki:"""
 
 PAGE_SELECT_PROMPT = """You are a retrieval assistant for a Montessori behavioral knowledge wiki.
 Given the wiki index below and the user's question, return a JSON array of file paths to read.
@@ -192,19 +193,31 @@ def _gather_context(
     question: str,
     current_page_path: str | None = None,
     selected_text: str | None = None,
-) -> str:
-    """Build context via index-guided adaptive graph traversal."""
+) -> tuple[str, list[str]]:
+    """Build context via index-guided adaptive graph traversal.
+
+    Returns (context_string, source_paths) where source_paths is an ordered
+    list of wiki paths corresponding to [1], [2], ... citations.
+    """
     parts: list[str] = []
     read_paths: set[str] = set()
+    source_paths: list[str] = []  # ordered, [1]-indexed for citations
     token_count = 0
+
+    def _add_source(path_str: str, content: str, label: str = "Source") -> None:
+        nonlocal token_count
+        source_paths.append(path_str)
+        idx = len(source_paths)
+        page_tokens = _estimate_tokens(content)
+        parts.append(f"## [{idx}] {label}: {path_str}\n{content}")
+        token_count += page_tokens
 
     # 1. Current page context (if user is viewing one)
     if current_page_path:
         full_path = WIKI_ROOT / current_page_path
         if full_path.exists() and full_path.is_file():
             content = full_path.read_text(encoding="utf-8")[:3000]
-            parts.append(f"## Currently viewing: {current_page_path}\n{content}")
-            token_count += _estimate_tokens(content)
+            _add_source(current_page_path, content, "Currently viewing")
             read_paths.add(current_page_path)
 
     # 2. Selected text
@@ -236,13 +249,10 @@ def _gather_context(
         if not content:
             continue
         page_text = content[:2000]
-        page_tokens = _estimate_tokens(page_text)
-        parts.append(f"## Page: {path_str_clean}\n{page_text}")
-        select_tokens_used += page_tokens
-        token_count += page_tokens
+        _add_source(path_str_clean, page_text)
+        select_tokens_used += _estimate_tokens(page_text)
         read_paths.add(path_str_clean)
 
-        # Collect link candidates from this page
         all_link_candidates.extend(_extract_link_candidates(content, meta))
 
     # 5. Adaptive expansion
@@ -274,10 +284,8 @@ def _gather_context(
         if not content:
             continue
         page_text = content[:1500]
-        page_tokens = _estimate_tokens(page_text)
-        parts.append(f"## Linked: {candidate_clean}\n{page_text}")
-        expansion_tokens_used += page_tokens
-        token_count += page_tokens
+        _add_source(candidate_clean, page_text, "Linked")
+        expansion_tokens_used += _estimate_tokens(page_text)
         read_paths.add(candidate_clean)
 
         if allow_2hop:
@@ -299,13 +307,21 @@ def _gather_context(
             if not content:
                 continue
             page_text = content[:1000]
-            page_tokens = _estimate_tokens(page_text)
-            parts.append(f"## Linked (2-hop): {candidate_clean}\n{page_text}")
-            remaining -= page_tokens
-            token_count += page_tokens
+            _add_source(candidate_clean, page_text, "Linked (2-hop)")
+            remaining -= _estimate_tokens(page_text)
             read_paths.add(candidate_clean)
 
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), source_paths
+
+
+def get_sources(
+    question: str,
+    current_page_path: str | None = None,
+    selected_text: str | None = None,
+) -> list[str]:
+    """Return the source paths that would be used for a query (for the API to send alongside the stream)."""
+    _, source_paths = _gather_context(question, current_page_path, selected_text)
+    return source_paths
 
 
 def stream_chat(
@@ -314,13 +330,24 @@ def stream_chat(
     current_page_path: str | None = None,
     selected_text: str | None = None,
 ) -> Generator[str, None, None]:
-    """Stream a chat response. Yields text chunks."""
+    """Stream a chat response. Yields text chunks.
+
+    The first yielded chunk is a JSON line with source paths:
+    {"sources": ["path1.md", "path2.md", ...]}
+    Followed by the actual response text chunks.
+    """
+    import json as _json
+
     client = _openai_client()
     if client is None:
+        yield _json.dumps({"sources": []}) + "\n"
         yield "Ask Monty requires an OpenAI API key. Set OPENAI_API_KEY in your environment."
         return
 
-    context = _gather_context(question, current_page_path, selected_text)
+    context, source_paths = _gather_context(question, current_page_path, selected_text)
+
+    # Emit sources as the first line so the frontend can render attribution
+    yield _json.dumps({"sources": source_paths}) + "\n"
 
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + context},

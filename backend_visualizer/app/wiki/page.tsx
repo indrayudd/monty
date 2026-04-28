@@ -75,6 +75,7 @@ export default function WikiPage() {
             messages={messages}
             setMessages={setMessages}
             onClear={handleClearChat}
+            onNavigate={setPath}
           />
         ) : (
           <WikiBacklinks path={path} />
