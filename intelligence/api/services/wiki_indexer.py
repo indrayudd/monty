@@ -224,4 +224,8 @@ def full_rebuild() -> dict[str, int]:
                 index_student_incident(f)
                 counts["incidents"] += 1
 
+    # Regenerate enriched markdown indexes (index.md + _index.md)
+    from intelligence.api.services.wiki_writer import update_indexes
+    update_indexes()
+
     return counts
