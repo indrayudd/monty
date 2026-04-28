@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from intelligence.api.services.ghost_client import _conn
 from intelligence.api.services.wiki_paths import WIKI_ROOT
+import frontmatter
 
 
 STUDENT_NAMES = ["Arjun Nair", "Diya Malhotra", "Kiaan Gupta", "Mira Shah", "Saanvi Verma"]
@@ -24,6 +25,151 @@ CRITICAL RULES:
 6. If you can't answer from the available context, say so clearly and suggest what wiki pages might help.
 
 You have access to the following context from the wiki:"""
+
+PAGE_SELECT_PROMPT = """You are a retrieval assistant for a Montessori behavioral knowledge wiki.
+Given the wiki index below and the user's question, return a JSON array of file paths to read.
+Select 5-15 pages most likely to contain or contribute to the answer.
+
+Prefer:
+- Behavioral nodes with high support counts relevant to the question
+- Research papers whose titles relate to the topic
+- Student profiles/incidents if the question names a specific child
+- Edge files that connect relevant behavioral patterns
+
+Return ONLY a JSON array of path strings, nothing else.
+Example: ["behavioral/behaviors/shutdown-stillness-avoidance.md", "sources/openalex/W1556609206.md"]"""
+
+
+def _load_index() -> str:
+    """Read wiki/index.md in full."""
+    index_path = WIKI_ROOT / "index.md"
+    if index_path.exists():
+        return index_path.read_text(encoding="utf-8")
+    return ""
+
+
+def _select_pages(question: str, index_text: str) -> list[str]:
+    """Ask LLM to select relevant wiki pages from the index."""
+    import json
+
+    client = _openai_client()
+    if client is None:
+        return []
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-5.4-nano",
+            messages=[
+                {"role": "system", "content": PAGE_SELECT_PROMPT + "\n\n" + index_text},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.0,
+            max_completion_tokens=400,
+        )
+        content = resp.choices[0].message.content or "[]"
+        # Strip markdown code fences if present
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0]
+        paths = json.loads(content)
+        if isinstance(paths, list):
+            return [p for p in paths if isinstance(p, str)]
+    except Exception:
+        pass
+    return []
+
+
+import re as _re
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: 1 token per 4 characters."""
+    return len(text) // 4
+
+
+def _extract_link_candidates(content: str, meta: dict) -> list[str]:
+    """Extract outgoing wiki paths from page content and frontmatter."""
+    candidates: list[str] = []
+
+    # behavioral_refs from incident frontmatter
+    for ref in meta.get("behavioral_refs", []) or []:
+        candidates.append(ref + ".md")
+
+    # src_slug / dst_slug from edge frontmatter
+    for key in ("src_slug", "dst_slug"):
+        val = meta.get(key)
+        if val:
+            candidates.append("behavioral/" + val + ".md" if not val.startswith("behavioral/") else val + ".md")
+
+    # related_nodes from node frontmatter
+    for ref in meta.get("related_nodes", []) or []:
+        if not ref.endswith(".md"):
+            ref += ".md"
+        candidates.append(ref)
+
+    # fetched_for_student -> student profile
+    student = meta.get("fetched_for_student")
+    if student:
+        candidates.append(f"students/{student.replace(' ', '_')}/profile.md")
+
+    # Markdown links [text](relative-path) - skip external URLs
+    for m in _re.finditer(r'\[([^\]]*)\]\(([^)]+)\)', content):
+        href = m.group(2)
+        if not href.startswith("http") and not href.startswith("#") and not href.startswith("mailto"):
+            candidates.append(href)
+
+    # Wiki-style [[slug]] links
+    for m in _re.finditer(r'\[\[([^\]]+)\]\]', content):
+        candidates.append(m.group(1))
+
+    return candidates
+
+
+def _read_page(path_str: str) -> tuple[str, dict, str]:
+    """Read a wiki page, return (path_str, frontmatter_dict, full_text)."""
+    full_path = WIKI_ROOT / path_str
+    if not full_path.exists() or not full_path.is_file():
+        return (path_str, {}, "")
+    try:
+        post = frontmatter.load(full_path)
+        return (path_str, dict(post.metadata), post.content)
+    except Exception:
+        text = full_path.read_text(encoding="utf-8")
+        return (path_str, {}, text)
+
+
+def _fallback_keyword_select(question: str) -> list[str]:
+    """Fallback when LLM page selection fails: keyword match against DB."""
+    conn = _conn()
+    try:
+        cur = conn.cursor()
+        keywords = [w for w in question.lower().split() if len(w) > 3]
+        paths: list[str] = []
+        if keywords:
+            like_clauses = " OR ".join(["title LIKE ? OR summary LIKE ?"] * len(keywords))
+            params = []
+            for kw in keywords:
+                params.extend([f"%{kw}%", f"%{kw}%"])
+            cur.execute(
+                f"SELECT slug, type FROM behavioral_nodes WHERE {like_clauses} "
+                f"ORDER BY support_count DESC LIMIT 10",
+                params,
+            )
+            for row in cur.fetchall():
+                slug, ntype = row[0], row[1]
+                for btype in ("setting_events", "antecedents", "behaviors",
+                              "functions", "brain_states", "responses", "protective_factors"):
+                    if ntype in btype or btype.startswith(ntype):
+                        paths.append(f"behavioral/{btype}/{slug}.md")
+                        break
+        student = _detect_student_query(question)
+        if student:
+            sdir = f"students/{student.replace(' ', '_')}"
+            paths.append(f"{sdir}/profile.md")
+            paths.append(f"{sdir}/patterns.md")
+        return paths
+    finally:
+        conn.close()
 
 
 def _openai_client() -> OpenAI | None:
@@ -47,99 +193,117 @@ def _gather_context(
     current_page_path: str | None = None,
     selected_text: str | None = None,
 ) -> str:
-    """Build context string from wiki content + behavioral KG."""
+    """Build context via index-guided adaptive graph traversal."""
     parts: list[str] = []
+    read_paths: set[str] = set()
+    token_count = 0
 
-    # 1. Current page content (if provided)
+    # 1. Current page context (if user is viewing one)
     if current_page_path:
         full_path = WIKI_ROOT / current_page_path
         if full_path.exists() and full_path.is_file():
             content = full_path.read_text(encoding="utf-8")[:3000]
             parts.append(f"## Currently viewing: {current_page_path}\n{content}")
+            token_count += _estimate_tokens(content)
+            read_paths.add(current_page_path)
 
     # 2. Selected text
     if selected_text:
-        parts.append(f"## User's selected text:\n{selected_text[:500]}")
+        snippet = selected_text[:500]
+        parts.append(f"## User's selected text:\n{snippet}")
+        token_count += _estimate_tokens(snippet)
 
-    # 3. Check if student-specific
-    student = _detect_student_query(question)
+    # 3. LLM-guided page selection from index
+    index_text = _load_index()
+    selected = _select_pages(question, index_text)
 
-    if student:
-        # Load student profile + recent incidents
-        student_dir = WIKI_ROOT / "students" / student.replace(" ", "_")
-        profile = student_dir / "profile.md"
-        if profile.exists():
-            parts.append(f"## Student profile: {student}\n{profile.read_text(encoding='utf-8')[:2000]}")
-        patterns = student_dir / "patterns.md"
-        if patterns.exists():
-            parts.append(f"## Student patterns: {student}\n{patterns.read_text(encoding='utf-8')[:1500]}")
-        # Recent incidents
-        incidents_dir = student_dir / "incidents"
-        if incidents_dir.exists():
-            incident_files = sorted(incidents_dir.glob("*.md"))[-5:]  # last 5
-            for f in incident_files:
-                parts.append(f"## Incident: {f.name}\n{f.read_text(encoding='utf-8')[:800]}")
+    # Fallback: if page selection returned nothing, try keyword matching
+    if not selected:
+        selected = _fallback_keyword_select(question)
+
+    # 4. Read selected pages (budget: ~8K tokens)
+    SELECT_BUDGET = 8000
+    select_tokens_used = 0
+    all_link_candidates: list[str] = []
+
+    for path_str in selected:
+        if path_str in read_paths:
+            continue
+        if select_tokens_used >= SELECT_BUDGET:
+            break
+        path_str_clean = path_str.lstrip("/")
+        _, meta, content = _read_page(path_str_clean)
+        if not content:
+            continue
+        page_text = content[:2000]
+        page_tokens = _estimate_tokens(page_text)
+        parts.append(f"## Page: {path_str_clean}\n{page_text}")
+        select_tokens_used += page_tokens
+        token_count += page_tokens
+        read_paths.add(path_str_clean)
+
+        # Collect link candidates from this page
+        all_link_candidates.extend(_extract_link_candidates(content, meta))
+
+    # 5. Adaptive expansion
+    if select_tokens_used < 4000:
+        expansion_budget = 8000
+        allow_2hop = True
+    elif select_tokens_used < 8000:
+        expansion_budget = 4000
+        allow_2hop = False
     else:
-        # General query — use full wiki markdown (the LLM-wiki query advantage)
-        parts.append("## Behavioral Knowledge Graph (anonymized, no student names)")
-        conn = _conn()
-        try:
-            cur = conn.cursor()
-            # Find relevant behavioral nodes by keyword matching
-            keywords = [w for w in question.lower().split() if len(w) > 3]
-            matched_slugs: list[str] = []
-            if keywords:
-                like_clauses = " OR ".join(["title LIKE ? OR summary LIKE ?"] * len(keywords))
-                params = []
-                for kw in keywords:
-                    params.extend([f"%{kw}%", f"%{kw}%"])
-                cur.execute(
-                    f"SELECT slug, type, title, summary, support_count, students_count "
-                    f"FROM behavioral_nodes WHERE {like_clauses} "
-                    f"ORDER BY support_count DESC LIMIT 10",
-                    params,
-                )
-                rows = cur.fetchall()
-                matched_slugs = [r[0] for r in rows] if rows else []
+        expansion_budget = 2000
+        allow_2hop = False
 
-            # If no keyword matches, grab top nodes by support count
-            if not matched_slugs:
-                cur.execute(
-                    "SELECT slug FROM behavioral_nodes ORDER BY support_count DESC LIMIT 8"
-                )
-                matched_slugs = [r[0] for r in cur.fetchall()]
-        finally:
-            conn.close()
+    from collections import Counter
+    candidate_counts = Counter(all_link_candidates)
+    for rp in read_paths:
+        candidate_counts.pop(rp, None)
 
-        # Read full markdown files for matched nodes (Evidence, descriptions, etc.)
-        for slug in matched_slugs[:8]:
-            # Search across all behavioral subdirs for the slug
-            for subdir in (WIKI_ROOT / "behavioral").iterdir():
-                if not subdir.is_dir() or subdir.name.startswith("_"):
-                    continue
-                md_file = subdir / f"{slug}.md"
-                if md_file.exists():
-                    content = md_file.read_text(encoding="utf-8")[:1500]
-                    parts.append(f"## Node: {slug} ({subdir.name})\n{content}")
-                    break
+    expansion_tokens_used = 0
+    hop2_candidates: list[str] = []
 
-        # Read relevant edge files that connect matched nodes
-        edges_dir = WIKI_ROOT / "behavioral" / "_edges"
-        if edges_dir.exists():
-            edge_count = 0
-            for edge_file in edges_dir.glob("*.md"):
-                if edge_count >= 10:
-                    break
-                fname = edge_file.stem
-                if any(slug in fname for slug in matched_slugs[:5]):
-                    content = edge_file.read_text(encoding="utf-8")[:600]
-                    parts.append(f"## Edge: {fname}\n{content}")
-                    edge_count += 1
+    for candidate_path, _count in candidate_counts.most_common():
+        if expansion_tokens_used >= expansion_budget:
+            break
+        candidate_clean = candidate_path.lstrip("/")
+        if candidate_clean in read_paths:
+            continue
+        _, meta, content = _read_page(candidate_clean)
+        if not content:
+            continue
+        page_text = content[:1500]
+        page_tokens = _estimate_tokens(page_text)
+        parts.append(f"## Linked: {candidate_clean}\n{page_text}")
+        expansion_tokens_used += page_tokens
+        token_count += page_tokens
+        read_paths.add(candidate_clean)
 
-        # Wiki index for navigation
-        index_path = WIKI_ROOT / "index.md"
-        if index_path.exists():
-            parts.append(f"## Wiki index\n{index_path.read_text(encoding='utf-8')[:2000]}")
+        if allow_2hop:
+            hop2_candidates.extend(_extract_link_candidates(content, meta))
+
+    # 2-hop expansion
+    if allow_2hop and hop2_candidates:
+        hop2_counts = Counter(hop2_candidates)
+        for rp in read_paths:
+            hop2_counts.pop(rp, None)
+        remaining = expansion_budget - expansion_tokens_used
+        for candidate_path, _count in hop2_counts.most_common():
+            if remaining <= 0:
+                break
+            candidate_clean = candidate_path.lstrip("/")
+            if candidate_clean in read_paths:
+                continue
+            _, meta, content = _read_page(candidate_clean)
+            if not content:
+                continue
+            page_text = content[:1000]
+            page_tokens = _estimate_tokens(page_text)
+            parts.append(f"## Linked (2-hop): {candidate_clean}\n{page_text}")
+            remaining -= page_tokens
+            token_count += page_tokens
+            read_paths.add(candidate_clean)
 
     return "\n\n".join(parts)
 
